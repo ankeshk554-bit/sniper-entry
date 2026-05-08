@@ -6,123 +6,140 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
 
-# --- 1. PREMIUM UI STYLING (THE MODERN LOOK) ---
-st.set_page_config(page_title="Sniper Terminal v4.0", layout="wide")
+# --- 1. BLOOMBERG DARK THEME UI ---
+st.set_page_config(page_title="Sniper Terminal v5.0", layout="wide")
 
 st.markdown("""
     <style>
-    /* Global Glassmorphism */
-    .main { background: #0E1117; font-family: 'Inter', sans-serif; }
-    [data-testid="stSidebar"] { background-color: #161B22; border-right: 1px solid #30363D; }
+    .main { background: #0B0E11; font-family: 'SF Pro Display', sans-serif; }
+    [data-testid="stSidebar"] { background-color: #15191E; border-right: 1px solid #2B3139; }
     
-    /* Modern Card Styling */
-    .metric-card {
-        background: rgba(22, 27, 34, 0.7);
-        border: 1px solid #30363D;
-        border-radius: 12px;
-        padding: 20px;
-        text-align: center;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    /* Premium HUD Cards */
+    .hud-card {
+        background: #1E222D;
+        border-top: 2px solid #2962FF;
+        border-radius: 4px;
+        padding: 15px;
+        text-align: left;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        margin-bottom: 10px;
     }
-    .metric-value { font-size: 24px; font-weight: 700; color: #00D1FF; }
-    .metric-label { font-size: 12px; text-transform: uppercase; color: #8B949E; letter-spacing: 1px; }
+    .hud-label { color: #848E9C; font-size: 11px; text-transform: uppercase; font-weight: 600; margin-bottom: 5px;}
+    .hud-value { color: #F0B90B; font-size: 20px; font-weight: 700; }
     
-    /* Custom Status Bar */
-    .status-bar {
-        padding: 10px 20px;
-        border-radius: 8px;
+    /* Sniper Badge */
+    .sniper-status {
+        padding: 8px 15px;
+        border-radius: 4px;
+        font-weight: 800;
+        text-align: center;
+        letter-spacing: 1px;
         margin-bottom: 20px;
-        font-weight: 600;
-        text-align: center;
     }
-    .bullish { background: rgba(0, 255, 163, 0.15); color: #00FFA3; border: 1px solid #00FFA3; }
-    .bearish { background: rgba(255, 49, 49, 0.15); color: #FF3131; border: 1px solid #FF3131; }
+    .active { background: #02C076; color: white; box-shadow: 0 0 15px rgba(2, 192, 118, 0.4); }
+    .wait { background: #1E222D; color: #848E9C; border: 1px solid #474D57; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. LOGIC & DATA ENGINE ---
+# --- 2. THE CORE ENGINE ---
 if 'watchlist' not in st.session_state:
-    st.session_state.watchlist = ["RELIANCE.NS", "TCS.NS", "TITAN.NS"]
+    st.session_state.watchlist = ["RELIANCE.NS", "TCS.NS", "TITAN.NS", "NIFTY_50"]
 
-# Sidebar - Settings
-st.sidebar.title("🏹 Terminal Ops")
-risk_amt = st.sidebar.number_input("Risk per Trade (₹)", value=2000)
-tf_options = {"Daily": "1d", "Weekly": "1wk", "1 Hour": "1h", "15 Min": "15m"}
-selected_tf = st.sidebar.selectbox("Analysis Interval", list(tf_options.keys()), index=0)
-interval = tf_options[selected_tf]
+st.sidebar.title("⚓ COMMAND CENTER")
+risk_amt = st.sidebar.number_input("Unit Risk (₹)", value=2000, step=100)
+tf_map = {"Daily": "1d", "Weekly": "1wk", "4H": "4h", "1H": "1h", "15M": "15m"}
+selected_tf = st.sidebar.selectbox("Interval", list(tf_map.keys()), index=0)
+interval = tf_map[selected_tf]
 
-# Watchlist Manager
+# Ticker Manager
 st.sidebar.markdown("---")
-new_tick = st.sidebar.text_input("Add Ticker").upper()
-if st.sidebar.button("➕ Add to Feed"):
+new_tick = st.sidebar.text_input("➕ ADD TICKER (e.g. AAPL)").upper()
+if st.sidebar.button("SYNC FEED"):
     if new_tick and new_tick not in st.session_state.watchlist:
         st.session_state.watchlist.append(new_tick)
         st.rerun()
 
-ticker = st.sidebar.selectbox("Select Target", st.session_state.watchlist)
+ticker = st.sidebar.selectbox("ACTIVE TARGET", st.session_state.watchlist)
 
-# --- 3. DIVERGENCE & AVWAP ENGINE ---
-def get_analysis(df):
+# --- 3. ROBUST AVWAP & TECHNICALS ---
+def calculate_world_class_data(ticker, interval):
+    period = "max" if interval in ['1d', '1wk'] else "60d"
+    df = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
+    if df.empty: return None
+    
+    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+    
+    # Technical Indicators
     df['EMA200'] = ta.ema(df['Close'], length=200)
     df['RSI'] = ta.rsi(df['Close'], length=14)
-    # AVWAP
-    t_idx, b_idx = df['High'].argmax(), df['Low'].argmin()
-    def av(idx):
-        tmp = df.iloc[idx:].copy()
-        return (tmp['Close'] * tmp['Volume']).cumsum() / tmp['Volume'].cumsum()
-    df['AVWAP_TOP'] = av(t_idx)
-    df['AVWAP_BOT'] = av(b_idx)
+    
+    # FIXED AVWAP LOGIC: Anchored to Screen Extremes
+    def avwap(anchor_idx):
+        tmp = df.iloc[anchor_idx:].copy()
+        if tmp['Volume'].sum() == 0: return pd.Series(index=df.index)
+        val = (tmp['Close'] * tmp['Volume']).cumsum() / tmp['Volume'].cumsum()
+        return val.reindex(df.index).ffill()
+
+    df['AVWAP_H'] = avwap(df['High'].argmax())
+    df['AVWAP_L'] = avwap(df['Low'].argmin())
+    
     return df
 
-# --- 4. THE UI LAYOUT ---
+# --- 4. EXECUTION & CHARTING ---
 if ticker:
-    data = yf.download(ticker, period="max" if interval in ['1d', '1wk'] else "60d", interval=interval, progress=False, auto_adjust=True)
-    if not data.empty:
-        df = data.copy()
-        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-        df = get_analysis(df)
+    df = calculate_world_class_data(ticker, interval)
+    if df is not None:
         curr = df.iloc[-1]
         
-        # --- TOP HUD (HEADS-UP DISPLAY) ---
-        is_bullish = curr['Close'] > curr['EMA200']
-        status_class = "bullish" if is_bullish else "bearish"
-        status_text = "INSTITUTIONAL UPTREND" if is_bullish else "INSTITUTIONAL DOWNTREND"
+        # --- UI TOP ROW (HUD) ---
+        is_uptrend = curr['Close'] > curr['EMA200']
+        is_value = curr['RSI'] < 40
+        sniper_active = is_uptrend and is_value
         
-        st.markdown(f'<div class="status-bar {status_class}">{status_text} | {ticker} @ ₹{round(curr["Close"], 2)}</div>', unsafe_allow_html=True)
+        status_css = "active" if sniper_active else "wait"
+        status_text = "SNIPER READY: A++ SETUP" if sniper_active else "WAITING FOR VALUE"
+        st.markdown(f'<div class="sniper-status {status_css}">{status_text}</div>', unsafe_allow_html=True)
         
-        # Metric Cards
-        diff = curr['Close'] - curr['Low']
+        # Risk Math
+        sl = curr['Low']
+        diff = curr['Close'] - sl
         qty = int(risk_amt / diff) if diff > 0 else 0
         
-        m1, m2, m3, m4 = st.columns(4)
-        with m1: st.markdown(f'<div class="metric-card"><div class="metric-label">Position Qty</div><div class="metric-value">{qty}</div></div>', unsafe_allow_html=True)
-        with m2: st.markdown(f'<div class="metric-card"><div class="metric-label">Stop Loss</div><div class="metric-value">₹{round(curr["Low"], 2)}</div></div>', unsafe_allow_html=True)
-        with m3: st.markdown(f'<div class="metric-card"><div class="metric-label">Target (1:2)</div><div class="metric-value">₹{round(curr["Close"] + (diff*2), 2)}</div></div>', unsafe_allow_html=True)
-        with m4: st.markdown(f'<div class="metric-card"><div class="metric-label">RSI</div><div class="metric-value">{round(curr["RSI"], 1)}</div></div>', unsafe_allow_html=True)
+        h1, h2, h3, h4 = st.columns(4)
+        with h1: st.markdown(f'<div class="hud-card"><div class="hud-label">Entry Price</div><div class="hud-value">₹{round(curr["Close"], 2)}</div></div>', unsafe_allow_html=True)
+        with h2: st.markdown(f'<div class="hud-card"><div class="hud-label">Position Qty</div><div class="hud-value">{qty}</div></div>', unsafe_allow_html=True)
+        with h3: st.markdown(f'<div class="hud-card"><div class="hud-label">Stop Loss</div><div class="hud-value">₹{round(sl, 2)}</div></div>', unsafe_allow_html=True)
+        with h4: st.markdown(f'<div class="hud-card"><div class="hud-label">RSI Gauge</div><div class="hud-value">{round(curr["RSI"], 1)}</div></div>', unsafe_allow_html=True)
 
-        # --- THE MAIN CHART ---
-        fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04, 
-                            row_width=[0.2, 0.2, 0.6], subplot_titles=("Price Action", "Volume", "RSI Momentum"))
+        # --- THE CHART (TradingView Desktop Style) ---
+        fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02, 
+                            row_width=[0.15, 0.15, 0.7], 
+                            subplot_titles=("", "", ""))
         
-        # Candle + Overlays
-        fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['EMA200'], line=dict(color='#00D1FF', width=1, dash='dot'), name="EMA 200"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['AVWAP_TOP'], line=dict(color='#FF3131', width=1.5), name="Supply"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['AVWAP_BOT'], line=dict(color='#00FFA3', width=1.5), name="Support"), row=1, col=1)
+        # 1. Price + AVWAPs
+        fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], 
+                                     name="Price", increasing_line_color='#02C076', decreasing_line_color='#F84960'), row=1, col=1)
         
-        # Volume
-        colors = ['#00FFA3' if df['Open'].iloc[i] < df['Close'].iloc[i] else '#FF3131' for i in range(len(df))]
-        fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors, name="Volume"), row=2, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['EMA200'], line=dict(color='#2962FF', width=1.5, dash='dot'), name="Institutional Floor"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['AVWAP_H'], line=dict(color='#F84960', width=2), name="Upper Supply"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['AVWAP_L'], line=dict(color='#02C076', width=2), name="Lower Support"), row=1, col=1)
         
-        # RSI
-        fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#ab63fa', width=2)), row=3, col=1)
-        fig.add_hline(y=70, line_dash="dash", line_color="#FF3131", row=3, col=1)
-        fig.add_hline(y=30, line_dash="dash", line_color="#00FFA3", row=3, col=1)
+        # 2. Volume
+        v_colors = ['#02C076' if df['Open'].iloc[i] < df['Close'].iloc[i] else '#F84960' for i in range(len(df))]
+        fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=v_colors, name="Volume"), row=2, col=1)
+        
+        # 3. RSI
+        fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#F0B90B', width=2)), row=3, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color="#F84960", opacity=0.3, row=3, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="#02C076", opacity=0.3, row=3, col=1)
 
-        fig.update_layout(template="plotly_dark", height=800, xaxis_rangeslider_visible=False, showlegend=False, margin=dict(l=10, r=10, b=10, t=30))
-        # Snap to recent action
-        fig.update_xaxes(range=[df.index[-120], df.index[-1]])
-        st.plotly_chart(fig, use_container_width=True)
-
+        # WORLD CLASS LAYOUT TWEAKS
+        fig.update_layout(template="plotly_dark", height=850, xaxis_rangeslider_visible=False, showlegend=False, 
+                          margin=dict(l=10, r=10, b=10, t=10), paper_bgcolor="#0B0E11", plot_bgcolor="#0B0E11")
+        
+        fig.update_xaxes(range=[df.index[-120], df.index[-1]], showgrid=False, zeroline=False)
+        fig.update_yaxes(showgrid=True, gridcolor="#232730", zeroline=False)
+        
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
     else:
-        st.error("Connection lost. Retrying data stream...")
+        st.error("Engine failure: Check ticker connectivity.")
