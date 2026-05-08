@@ -124,28 +124,35 @@ def fast_avwap(df, start_idx):
     return out
 
 # ─────────────────────────────────────────────
-# BACKTEST ENGINE (FIXED + SAFE)
+# BACKTEST ENGINE (SAFE, CLEAN)
 # ─────────────────────────────────────────────
 def run_backtest(df, risk_per_trade=2000):
     df = df.copy()
 
+    # Trend filter
     df['Trend'] = df['Close'] > df['EMA200']
 
+    # Entry condition
     df['Entry'] = (
         (df['RSI'] < 32) &
         (df['Close'] > df['AVWAP_BOT']) &
         (df['Trend'])
     )
 
+    # Stoploss = previous swing low
     df['SL'] = df['Low'].rolling(5).min().shift(1)
+
+    # Clean SL
     df['SL'] = df['SL'].replace([np.inf, -np.inf], np.nan)
-    df['SL'] = df['SL'].fillna(method='bfill')
+    df['SL'] = df['SL'].bfill()
     df['SL'] = df['SL'].fillna(df['Low'])
 
+    # Risk
     df['Risk'] = df['Close'] - df['SL']
     df['Risk'] = df['Risk'].replace([np.inf, -np.inf], np.nan)
     df['Risk'] = df['Risk'].fillna(0)
 
+    # Position size
     df['Qty'] = risk_per_trade / df['Risk']
     df['Qty'] = df['Qty'].replace([np.inf, -np.inf], np.nan)
     df['Qty'] = df['Qty'].fillna(0)
@@ -153,13 +160,16 @@ def run_backtest(df, risk_per_trade=2000):
 
     trades = []
     in_trade = False
+    entry_i = None
+    entry_price = sl = tgt = qty = None
 
     for i in range(len(df)):
-        if not in_trade and df['Entry'].iloc[i] and df['Qty'].iloc[i] > 0:
+        if (not in_trade) and df['Entry'].iloc[i] and df['Qty'].iloc[i] > 0 and df['Risk'].iloc[i] > 0:
             entry_i = i
             entry_price = float(df['Close'].iloc[i])
             sl = float(df['SL'].iloc[i])
-            tgt = entry_price + (entry_price - sl) * 2
+            risk_per_share = entry_price - sl
+            tgt = entry_price + 2 * risk_per_share
             qty = int(df['Qty'].iloc[i])
             in_trade = True
             continue
@@ -168,6 +178,7 @@ def run_backtest(df, risk_per_trade=2000):
             low = float(df['Low'].iloc[i])
             high = float(df['High'].iloc[i])
 
+            # SL hit
             if low <= sl:
                 trades.append({
                     'Entry': df.index[entry_i],
@@ -180,6 +191,7 @@ def run_backtest(df, risk_per_trade=2000):
                 in_trade = False
                 continue
 
+            # Target hit
             if high >= tgt:
                 trades.append({
                     'Entry': df.index[entry_i],
@@ -191,6 +203,9 @@ def run_backtest(df, risk_per_trade=2000):
                 })
                 in_trade = False
                 continue
+
+    if len(trades) == 0:
+        return pd.DataFrame(columns=['Entry', 'Exit', 'EntryPrice', 'ExitPrice', 'Qty', 'PnL'])
 
     return pd.DataFrame(trades)
 
@@ -207,18 +222,20 @@ try:
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
+        # Indicators
         df['EMA200'] = ema(df['Close'], 200)
         df['EMA50']  = ema(df['Close'], 50)
         df['RSI']    = rsi(df['Close'], 14)
 
+        # AVWAP
         t_idx = int(df['High'].argmax())
         b_idx = int(df['Low'].argmin())
         df['AVWAP_TOP'] = fast_avwap(df, t_idx)
         df['AVWAP_BOT'] = fast_avwap(df, b_idx)
 
-        # ─────────────────────────────────────────────
-        # PRICE CHART
-        # ─────────────────────────────────────────────
+        # ─────────────────────────────────────────
+        # PRICE + VOLUME + RSI CHART
+        # ─────────────────────────────────────────
         fig = make_subplots(
             rows=3, cols=1,
             shared_xaxes=True,
@@ -226,6 +243,7 @@ try:
             row_heights=[0.6, 0.15, 0.25]
         )
 
+        # Price
         fig.add_trace(go.Candlestick(
             x=df.index,
             open=df['Open'],
@@ -282,9 +300,9 @@ try:
 
         st.plotly_chart(fig, use_container_width=True)
 
-        # ─────────────────────────────────────────────
+        # ─────────────────────────────────────────
         # BACKTEST RESULTS
-        # ─────────────────────────────────────────────
+        # ─────────────────────────────────────────
         st.subheader("📈 Backtest Results")
 
         bt = run_backtest(df, risk_amt)
@@ -319,20 +337,23 @@ try:
             )
             st.plotly_chart(fig_bt, use_container_width=True)
 
-        # ─────────────────────────────────────────────
+        # ─────────────────────────────────────────
         # EXECUTION PLAN
-        # ─────────────────────────────────────────────
+        # ─────────────────────────────────────────
         curr = df.iloc[-1]
         entry = float(curr['Close'])
-        sl = float(curr['Low'])
-        diff = entry - sl
-        qty = int(risk_amt / diff) if diff > 0 else 0
+        sl_live = float(curr['Low'])
+        diff = entry - sl_live
+        qty_live = int(risk_amt / diff) if diff > 0 else 0
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Live Price", f"₹{entry:,.2f}")
-        c2.metric(f"Qty (Risk ₹{risk_amt})", f"{qty}")
-        c3.metric("Stop Loss", f"₹{sl:,.2f}", delta=f"-₹{diff:.2f}", delta_color="inverse")
-        c4.metric("Target (1:2)", f"₹{entry + (diff*2):,.2f}")
+        c2.metric(f"Qty (Risk ₹{risk_amt})", f"{qty_live}")
+        c3.metric("Stop Loss", f"₹{sl_live:,.2f}", delta=f"-₹{diff:.2f}", delta_color="inverse")
+        c4.metric("Target (1:2)", f"₹{entry + (diff*2):,.2f}" if diff > 0 else "—")
+
+    else:
+        st.error("No data returned for this ticker/timeframe.")
 
 except Exception as e:
     st.error(f"Analysis Error: {e}")
