@@ -3,7 +3,6 @@ import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from datetime import datetime
 import numpy as np
 
 # ─────────────────────────────────────────────
@@ -70,19 +69,11 @@ html, body, [class*="css"] {
     margin: 2px;
     display: inline-block;
 }
-
-.status-dot {
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: var(--green);
-    display: inline-block;
-    box-shadow: 0 0 6px var(--green);
-}
 </style>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# SESSION STATE & SIDEBAR
+# SIDEBAR
 # ─────────────────────────────────────────────
 if 'watchlist' not in st.session_state:
     st.session_state.watchlist = ["RELIANCE.NS", "TCS.NS", "TITAN.NS", "INFY.NS", "HDFCBANK.NS"]
@@ -133,68 +124,75 @@ def fast_avwap(df, start_idx):
     return out
 
 # ─────────────────────────────────────────────
-# DIVERGENCE CALCULATOR (same logic, kept simple)
-# ─────────────────────────────────────────────
-def calculate_divergence_lines(df, window=5):
-    df = df.copy()
-    df['Price_Low'] = df['Low'].rolling(window=window*2+1, center=True).min()
-    df['Price_High'] = df['High'].rolling(window=window*2+1, center=True).max()
-    bull_lines, bear_lines = [], []
-    lp_low, lp_high = -1, -1
-
-    for i in range(window*2, len(df)):
-        if df['Low'].iloc[i] == df['Price_Low'].iloc[i]:
-            if lp_low != -1:
-                if df['Low'].iloc[i] < df['Low'].iloc[lp_low] and df['RSI'].iloc[i] > df['RSI'].iloc[lp_low]:
-                    if df['RSI'].iloc[i] < 35:
-                        bull_lines.append(((df.index[lp_low], df['RSI'].iloc[lp_low]), (df.index[i], df['RSI'].iloc[i])))
-                        bull_lines.append(((df.index[lp_low], df['Low'].iloc[lp_low]), (df.index[i], df['Low'].iloc[i]), 'price'))
-            lp_low = i
-        if df['High'].iloc[i] == df['Price_High'].iloc[i]:
-            if lp_high != -1:
-                if df['High'].iloc[i] > df['High'].iloc[lp_high] and df['RSI'].iloc[i] < df['RSI'].iloc[lp_high]:
-                    if df['RSI'].iloc[i] > 65:
-                        bear_lines.append(((df.index[lp_high], df['RSI'].iloc[lp_high]), (df.index[i], df['RSI'].iloc[i])))
-                        bear_lines.append(((df.index[lp_high], df['High'].iloc[lp_high]), (df.index[i], df['High'].iloc[i]), 'price'))
-            lp_high = i
-    return bull_lines, bear_lines
-
-# ─────────────────────────────────────────────
-# BACKTEST ENGINE (Ultra‑Fast)
+# BACKTEST ENGINE (FIXED + SAFE)
 # ─────────────────────────────────────────────
 def run_backtest(df, risk_per_trade=2000):
     df = df.copy()
 
-    # Trend filter
     df['Trend'] = df['Close'] > df['EMA200']
 
-    # Entry signal: RSI oversold + price above AVWAP_BOT + trend up
     df['Entry'] = (
         (df['RSI'] < 32) &
         (df['Close'] > df['AVWAP_BOT']) &
         (df['Trend'])
     )
 
-  # Stoploss = previous swing low
-df['SL'] = df['Low'].rolling(5).min().shift(1)
+    df['SL'] = df['Low'].rolling(5).min().shift(1)
+    df['SL'] = df['SL'].replace([np.inf, -np.inf], np.nan)
+    df['SL'] = df['SL'].fillna(method='bfill')
+    df['SL'] = df['SL'].fillna(df['Low'])
 
-# Clean SL
-df['SL'] = df['SL'].replace([np.inf, -np.inf], np.nan)
-df['SL'] = df['SL'].fillna(method='bfill')   # fallback SL
-df['SL'] = df['SL'].fillna(df['Low'])        # absolute fallback
+    df['Risk'] = df['Close'] - df['SL']
+    df['Risk'] = df['Risk'].replace([np.inf, -np.inf], np.nan)
+    df['Risk'] = df['Risk'].fillna(0)
 
-# Risk and Target
-df['Risk'] = df['Close'] - df['SL']
-df['Risk'] = df['Risk'].replace([np.inf, -np.inf], np.nan)
-df['Risk'] = df['Risk'].fillna(0)
+    df['Qty'] = risk_per_trade / df['Risk']
+    df['Qty'] = df['Qty'].replace([np.inf, -np.inf], np.nan)
+    df['Qty'] = df['Qty'].fillna(0)
+    df['Qty'] = df['Qty'].clip(lower=0).astype(int)
 
-# Position size
-df['Qty'] = risk_per_trade / df['Risk']
-df['Qty'] = df['Qty'].replace([np.inf, -np.inf], np.nan)
-df['Qty'] = df['Qty'].fillna(0)
-df['Qty'] = df['Qty'].clip(lower=0).astype(int)
+    trades = []
+    in_trade = False
 
-   
+    for i in range(len(df)):
+        if not in_trade and df['Entry'].iloc[i] and df['Qty'].iloc[i] > 0:
+            entry_i = i
+            entry_price = float(df['Close'].iloc[i])
+            sl = float(df['SL'].iloc[i])
+            tgt = entry_price + (entry_price - sl) * 2
+            qty = int(df['Qty'].iloc[i])
+            in_trade = True
+            continue
+
+        if in_trade:
+            low = float(df['Low'].iloc[i])
+            high = float(df['High'].iloc[i])
+
+            if low <= sl:
+                trades.append({
+                    'Entry': df.index[entry_i],
+                    'Exit': df.index[i],
+                    'EntryPrice': entry_price,
+                    'ExitPrice': sl,
+                    'Qty': qty,
+                    'PnL': (sl - entry_price) * qty
+                })
+                in_trade = False
+                continue
+
+            if high >= tgt:
+                trades.append({
+                    'Entry': df.index[entry_i],
+                    'Exit': df.index[i],
+                    'EntryPrice': entry_price,
+                    'ExitPrice': tgt,
+                    'Qty': qty,
+                    'PnL': (tgt - entry_price) * qty
+                })
+                in_trade = False
+                continue
+
+    return pd.DataFrame(trades)
 
 # ─────────────────────────────────────────────
 # MAIN DASHBOARD
@@ -204,26 +202,23 @@ st.title(f"⚡ Terminal Scan: {ticker}")
 try:
     period = "2y" if interval in ["1d", "1wk"] else "60d"
     df = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
-    
+
     if not df.empty:
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
-        
-        # Indicators (fast)
+
         df['EMA200'] = ema(df['Close'], 200)
         df['EMA50']  = ema(df['Close'], 50)
         df['RSI']    = rsi(df['Close'], 14)
 
-        # AVWAP Support/Supply (fast)
         t_idx = int(df['High'].argmax())
         b_idx = int(df['Low'].argmin())
         df['AVWAP_TOP'] = fast_avwap(df, t_idx)
         df['AVWAP_BOT'] = fast_avwap(df, b_idx)
 
-        # Divergence (optional visual, not used in backtest yet)
-        bull_lines, bear_lines = calculate_divergence_lines(df)
-
-        # Chart Construction
+        # ─────────────────────────────────────────────
+        # PRICE CHART
+        # ─────────────────────────────────────────────
         fig = make_subplots(
             rows=3, cols=1,
             shared_xaxes=True,
@@ -231,7 +226,6 @@ try:
             row_heights=[0.6, 0.15, 0.25]
         )
 
-        # Price
         fig.add_trace(go.Candlestick(
             x=df.index,
             open=df['Open'],
@@ -260,7 +254,7 @@ try:
         ), row=1, col=1)
 
         # Volume
-        v_colors = ["#00e676" if df['Open'].iloc[i] < df['Close'].iloc[i] else "#ff3d5a" for i in range(len(df))]
+        v_colors = ["#00e676" if df['Close'].iloc[i] > df['Open'].iloc[i] else "#ff3d5a" for i in range(len(df))]
         fig.add_trace(go.Bar(
             x=df.index, y=df['Volume'],
             marker_color=v_colors,
@@ -288,15 +282,15 @@ try:
 
         st.plotly_chart(fig, use_container_width=True)
 
-        # ─────────────────────────────────────
+        # ─────────────────────────────────────────────
         # BACKTEST RESULTS
-        # ─────────────────────────────────────
+        # ─────────────────────────────────────────────
         st.subheader("📈 Backtest Results")
 
         bt = run_backtest(df, risk_amt)
 
         if bt.empty:
-            st.warning("No trades triggered for this strategy in the selected period.")
+            st.warning("No trades triggered for this strategy.")
         else:
             bt['Equity'] = bt['PnL'].cumsum()
             max_dd = (bt['Equity'].cummax() - bt['Equity']).max()
@@ -325,9 +319,9 @@ try:
             )
             st.plotly_chart(fig_bt, use_container_width=True)
 
-        # ─────────────────────────────────────
-        # EXECUTION PLAN (LIVE BAR)
-        # ─────────────────────────────────────
+        # ─────────────────────────────────────────────
+        # EXECUTION PLAN
+        # ─────────────────────────────────────────────
         curr = df.iloc[-1]
         entry = float(curr['Close'])
         sl = float(curr['Low'])
@@ -339,9 +333,6 @@ try:
         c2.metric(f"Qty (Risk ₹{risk_amt})", f"{qty}")
         c3.metric("Stop Loss", f"₹{sl:,.2f}", delta=f"-₹{diff:.2f}", delta_color="inverse")
         c4.metric("Target (1:2)", f"₹{entry + (diff*2):,.2f}")
-
-    else:
-        st.error("No data returned for this ticker/timeframe.")
 
 except Exception as e:
     st.error(f"Analysis Error: {e}")
