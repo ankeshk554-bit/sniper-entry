@@ -4,144 +4,142 @@ import pandas_ta as ta
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import numpy as np
 
-# --- 1. IPAD ULTRA-CONTRAST UI ---
-st.set_page_config(page_title="Sniper Terminal v5.1", layout="wide")
+# --- 1. TRADINGVIEW PRO INTERFACE ---
+st.set_page_config(page_title="Sniper Terminal v6.0", layout="wide")
 
 st.markdown("""
     <style>
-    .main { background: #000000; } /* Pure Black for maximum contrast */
-    [data-testid="stSidebar"] { background-color: #111111; border-right: 2px solid #333333; }
+    .main { background: #131722; } /* TradingView Original Dark */
+    [data-testid="stSidebar"] { background-color: #171b26; border-right: 1px solid #363c4e; }
     
-    /* High-Visibility HUD */
-    .hud-card {
-        background: #111111;
-        border: 2px solid #444444;
-        border-radius: 8px;
-        padding: 15px;
-        text-align: center;
-        margin-bottom: 10px;
-    }
-    .hud-label { color: #AAAAAA; font-size: 14px; font-weight: 700; text-transform: uppercase; }
-    .hud-value { color: #00FFCC; font-size: 28px; font-weight: 900; }
+    /* Sniper HUD */
+    .stMetric { background-color: #1e222d; border: 1px solid #363c4e; padding: 15px; border-radius: 4px; }
+    div[data-testid="stMetricValue"] { color: #2962ff !important; font-size: 28px !important; }
     
-    .status-banner {
-        padding: 15px;
-        border-radius: 8px;
-        font-size: 20px;
-        font-weight: 900;
-        text-align: center;
+    /* Top Bar Status */
+    .tv-status {
+        background: #1e222d;
+        color: #d1d4dc;
+        padding: 10px;
+        border-radius: 4px;
+        border-left: 5px solid #2962ff;
         margin-bottom: 20px;
-        border: 2px solid;
+        font-weight: 600;
     }
-    .active { background: rgba(0, 255, 0, 0.2); color: #00FF00; border-color: #00FF00; }
-    .neutral { background: rgba(255, 255, 255, 0.1); color: #FFFFFF; border-color: #FFFFFF; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATA ENGINE ---
+# --- 2. LOGIC ENGINE ---
 if 'watchlist' not in st.session_state:
     st.session_state.watchlist = ["RELIANCE.NS", "TCS.NS", "TITAN.NS"]
 
-st.sidebar.title("🏹 SNIPER OPS")
-risk_amt = st.sidebar.number_input("Risk Amount (₹)", value=2000)
-tf_options = {"1 Day": "1d", "1 Week": "1wk", "1 Hour": "1h", "15 Min": "15m"}
-selected_tf = st.sidebar.selectbox("Timeframe", list(tf_options.keys()), index=0)
-interval = tf_options[selected_tf]
+st.sidebar.title("📡 SNIPER v6.0")
+risk_amt = st.sidebar.number_input("Risk Capital (₹)", value=2000)
 
-# Watchlist/Search
+# Ticker Selection
+ticker = st.sidebar.selectbox("Active Chart", st.session_state.watchlist)
+tf_options = {"Daily": "1d", "Weekly": "1wk", "1 Hour": "1h", "15 Min": "15m"}
+interval = tf_options[st.sidebar.selectbox("Timeframe", list(tf_options.keys()))]
+
 st.sidebar.markdown("---")
-ticker_search = st.sidebar.text_input("🔍 Search Any Stock", "").upper()
-ticker = ticker_search if ticker_search else st.sidebar.selectbox("Watchlist", st.session_state.watchlist)
-
-if st.sidebar.button("➕ Add to Watchlist"):
-    if ticker_search and ticker_search not in st.session_state.watchlist:
-        st.session_state.watchlist.append(ticker_search)
+new_tick = st.sidebar.text_input("Add Ticker (e.g. SBIN.NS)").upper()
+if st.sidebar.button("➕ Update Watchlist"):
+    if new_tick and new_tick not in st.session_state.watchlist:
+        st.session_state.watchlist.append(new_tick)
         st.rerun()
 
-# --- 3. ROBUST CALCULATIONS ---
-def fetch_and_fix(ticker, interval):
-    period = "max" if interval in ['1d', '1wk'] else "60d"
-    df = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
+# --- 3. DATA PROCESSING (THE SCALE FIX) ---
+def get_clean_data(symbol, interval):
+    period = "max" if interval in ["1d", "1wk"] else "60d"
+    # Group_by='ticker' is the key to stopping the MultiIndex bug
+    df = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=True)
     if df.empty: return None
     
-    # THE NUCLEAR FIX: Flatten any MultiIndex and force standard names
+    # Flatten columns to ensure 'Close' is just 'Close'
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     
+    # Ensure all required columns are present
     df = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
     
     # Technicals
     df['EMA200'] = ta.ema(df['Close'], length=200)
     df['RSI'] = ta.rsi(df['Close'], length=14)
     
-    # AVWAP Fix: Ensure anchors exist
+    # AVWAP Calculation (Pure Price logic)
     high_idx = df['High'].idxmax()
     low_idx = df['Low'].idxmin()
+    def avwap(anchor):
+        tmp = df.loc[anchor:].copy()
+        return (tmp['Close'] * tmp['Volume']).cumsum() / tmp['Volume'].cumsum()
     
-    def calc_avwap(anchor_date):
-        temp = df.loc[anchor_date:].copy()
-        return (temp['Close'] * temp['Volume']).cumsum() / temp['Volume'].cumsum()
-
-    df['AVWAP_TOP'] = calc_avwap(high_idx)
-    df['AVWAP_BOT'] = calc_avwap(low_idx)
+    df['AVWAP_H'] = avwap(high_idx)
+    df['AVWAP_L'] = avwap(low_idx)
     
     return df
 
-# --- 4. THE TERMINAL VIEW ---
+# --- 4. THE TERMINAL DISPLAY ---
 if ticker:
-    df = fetch_and_fix(ticker, interval)
+    df = get_clean_data(ticker, interval)
     if df is not None:
         curr = df.iloc[-1]
         
-        # Strategy Check
-        is_bullish = curr['Close'] > curr['EMA200'] if not pd.isna(curr['EMA200']) else True
-        status_class = "active" if is_bullish else "neutral"
-        status_text = "BULLISH STRUCTURE" if is_bullish else "BEARISH STRUCTURE"
-        st.markdown(f'<div class="status-banner {status_class}">{ticker} | {status_text}</div>', unsafe_allow_html=True)
+        # --- TOP HUD ---
+        st.markdown(f'<div class="tv-status">{ticker} • {interval} • Institutional Sniper Mode Activated</div>', unsafe_allow_html=True)
         
-        # Metric Cards
-        diff = curr['Close'] - curr['Low']
-        qty = int(risk_amt / diff) if diff > 0 else 0
-        m1, m2, m3, m4 = st.columns(4)
-        with m1: st.markdown(f'<div class="hud-card"><div class="hud-label">Entry</div><div class="hud-value">₹{round(curr["Close"], 1)}</div></div>', unsafe_allow_html=True)
-        with m2: st.markdown(f'<div class="hud-card"><div class="hud-label">Qty</div><div class="hud-value">{qty}</div></div>', unsafe_allow_html=True)
-        with m3: st.markdown(f'<div class="hud-card"><div class="hud-label">Stop Loss</div><div class="hud-value">₹{round(curr["Low"], 1)}</div></div>', unsafe_allow_html=True)
-        with m4: st.markdown(f'<div class="hud-card"><div class="hud-label">RSI</div><div class="hud-value">{round(curr["RSI"], 1)}</div></div>', unsafe_allow_html=True)
+        # Math for your ₹2000 Risk
+        sl_price = curr['Low']
+        risk_per_share = curr['Close'] - sl_price
+        qty = int(risk_amt / risk_per_share) if risk_per_share > 0 else 0
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Live Price", f"₹{round(curr['Close'], 2)}")
+        c2.metric("Buy Qty", f"{qty} Units")
+        c3.metric("Stop Loss", f"₹{round(sl_price, 2)}")
+        c4.metric("Target (1:2)", f"₹{round(curr['Close'] + (risk_per_share * 2), 2)}")
 
-        # --- THE CHART ---
-        fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02, 
+        # --- 5. WORLD CLASS CHARTING ---
+        # 3 Rows: Price (70%), Volume (15%), RSI (15%)
+        fig = make_subplots(rows=3, cols=1, shared_xaxes=True, 
+                            vertical_spacing=0.02, 
                             row_width=[0.15, 0.15, 0.7])
 
-        # 1. Price (BOLD NEON)
+        # A. MAIN CHART (Right-side Axis)
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], 
-                                     name="Price", increasing_line_color='#00FF00', decreasing_line_color='#FF0000',
-                                     increasing_fillcolor='#00FF00', decreasing_fillcolor='#FF0000'), row=1, col=1)
+                                     name="Price", increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
+                                     increasing_fillcolor='#26a69a', decreasing_fillcolor='#ef5350'), row=1, col=1)
         
-        # Bolder Indicator Lines
-        fig.add_trace(go.Scatter(x=df.index, y=df['EMA200'], line=dict(color='#00FFFF', width=3, dash='dot'), name="EMA 200"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['AVWAP_TOP'], line=dict(color='#FF00FF', width=4), name="Top Supply"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['AVWAP_BOT'], line=dict(color='#FFFF00', width=4), name="Bot Support"), row=1, col=1)
+        # Pro Overlays
+        fig.add_trace(go.Scatter(x=df.index, y=df['EMA200'], line=dict(color='#2962ff', width=1.5, dash='dot'), name="EMA 200"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['AVWAP_H'], line=dict(color='#ef5350', width=2), name="Resistance"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['AVWAP_L'], line=dict(color='#26a69a', width=2), name="Support"), row=1, col=1)
 
-        # 2. Volume
-        v_colors = ['#00FF00' if df['Open'].iloc[i] < df['Close'].iloc[i] else '#FF0000' for i in range(len(df))]
-        fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=v_colors, name="Volume"), row=2, col=1)
+        # B. VOLUME (TradingView Style)
+        colors = ['#26a69a' if df['Open'].iloc[i] < df['Close'].iloc[i] else '#ef5350' for i in range(len(df))]
+        fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors, name="Volume", opacity=0.5), row=2, col=1)
 
-        # 3. RSI
-        fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#FFFFFF', width=3)), row=3, col=1)
-        fig.add_hline(y=70, line_dash="dash", line_color="#FF0000", opacity=0.5, row=3, col=1)
-        fig.add_hline(y=30, line_dash="dash", line_color="#00FF00", opacity=0.5, row=3, col=1)
+        # C. RSI
+        fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#787b86', width=2), name="RSI"), row=3, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color="#ef5350", opacity=0.3, row=3, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="#26a69a", opacity=0.3, row=3, col=1)
 
-        # iPad Layout Tweaks
-        fig.update_layout(template="plotly_dark", height=900, xaxis_rangeslider_visible=False, 
-                          showlegend=False, paper_bgcolor="#000000", plot_bgcolor="#000000",
-                          margin=dict(l=10, r=10, b=10, t=10))
+        # FINAL TV-STYLING
+        fig.update_layout(
+            template="plotly_dark",
+            height=850,
+            xaxis_rangeslider_visible=False,
+            showlegend=False,
+            paper_bgcolor="#131722",
+            plot_bgcolor="#131722",
+            margin=dict(l=0, r=50, b=0, t=10), # Right margin for labels
+            hovermode='x unified'
+        )
         
-        # Focus on recent 100 bars
-        fig.update_xaxes(range=[df.index[-100], df.index[-1]], showgrid=True, gridcolor="#222222")
-        fig.update_yaxes(showgrid=True, gridcolor="#222222", side="right") # Right side labels are easier on iPad
-        
+        # Grid Styling
+        fig.update_xaxes(showgrid=True, gridcolor="#1f222d", zeroline=False, range=[df.index[-120], df.index[-1]])
+        fig.update_yaxes(showgrid=True, gridcolor="#1f222d", zeroline=False, side="right")
+
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
     else:
-        st.error("Engine Fault: Data could not be mapped. Try another ticker.")
+        st.error("Signal Lost: Ticker data is unavailable or the symbol is incorrect.")
