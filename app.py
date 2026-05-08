@@ -4,88 +4,59 @@ import pandas_ta as ta
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import numpy as np
 
 # --- PAGE SETUP ---
-st.set_page_config(page_title="Ankesh Sniper Terminal v2.0", layout="wide")
+st.set_page_config(page_title="Sniper Terminal v3.0", layout="wide")
 
-# --- CUSTOM CSS FOR IPAD OPTIMIZATION ---
-st.markdown("""
-    <style>
-    [data-testid="stSidebar"][aria-expanded="true"] > div:first-child { width: 300px; }
-    [data-testid="stSidebar"][aria-expanded="false"] > div:first-child { width: 300px; margin-left: -300px; }
-    .stMetric { background-color: #161b22; padding: 10px; border-radius: 5px; }
-    </style>
-    """, unsafe_allow_html=True)
+# --- UI TABS FOR CLEANER NAVIGATION ---
+tab1, tab2 = st.tabs(["🏹 Trading Desk", "📂 Watchlist Manager"])
 
-# --- INITIALIZE SESSION STATE ---
-if 'watchlist' not in st.session_state:
-    st.session_state.watchlist = ["RELIANCE.NS", "TCS.NS", "TITAN.NS"]
-
-# --- SIDEBAR CONTROL PANEL ---
-st.sidebar.title("🏹 Control Panel")
-risk_amt = st.sidebar.number_input("Risk per Trade (₹)", value=2000, step=100)
-tf_options = {"1 Day": "1d", "1 Week": "1wk", "4 Hour": "4h", "1 Hour": "1h", "15 Min": "15m"}
-selected_tf = st.sidebar.selectbox("Timeframe", list(tf_options.keys()), index=0)
-interval = tf_options[selected_tf]
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("Ticker Search")
-ticker = st.sidebar.text_input("Enter Ticker (e.g. SBIN.NS)", "RELIANCE.NS").upper()
-
-# --- COMPLEX DIVERGENCE LINE CALCULATOR ---
-def calculate_divergence_lines(df, window=5):
-    # Find local price & RSI peaks/troughs
-    df['Price_Low'] = df['Low'].rolling(window=window*2+1, center=True).min()
-    df['Price_High'] = df['High'].rolling(window=window*2+1, center=True).max()
-    df['RSI_Low'] = df['RSI'].rolling(window=window*2+1, center=True).min()
-    df['RSI_High'] = df['RSI'].rolling(window=window*2+1, center=True).max()
+with tab2:
+    st.subheader("Manage Your Tickers")
+    if 'watchlist' not in st.session_state:
+        st.session_state.watchlist = ["RELIANCE.NS", "TCS.NS", "TITAN.NS"]
     
-    bull_lines, bear_lines = [], []
-    last_p_low, last_p_high = -1, -1
+    col_a, col_b = st.columns(2)
+    with col_a:
+        new_ticker = st.text_input("Add Ticker (e.g. INFIBEAM.NS)").upper()
+        if st.button("➕ Add to Watchlist"):
+            if new_ticker and new_ticker not in st.session_state.watchlist:
+                st.session_state.watchlist.append(new_ticker)
+                st.rerun()
+    with col_b:
+        if st.button("🗑️ Reset to Default"):
+            st.session_state.watchlist = ["RELIANCE.NS", "TCS.NS", "TITAN.NS"]
+            st.rerun()
 
-    for i in range(window*2, len(df)):
-        # Calculate Trough coordinates (Bullish)
-        if df['Low'].iloc[i] == df['Price_Low'].iloc[i]:
-            if last_p_low != -1:
-                # Math: Price LL, RSI HL
-                if df['Low'].iloc[i] < df['Low'].iloc[last_p_low] and df['RSI'].iloc[i] > df['RSI'].iloc[last_p_low]:
-                    if df['RSI'].iloc[i] < 35: # Quality oversold check
-                        bull_lines.append(((df.index[last_p_low], df['RSI'].iloc[last_p_low]), (df.index[i], df['RSI'].iloc[i])))
-                        bull_lines.append(((df.index[last_p_low], df['Low'].iloc[last_p_low]), (df.index[i], df['Low'].iloc[i]), 'price')) # Price overlay
-            last_p_low = i
-            
-        # Calculate Peak coordinates (Bearish)
-        if df['High'].iloc[i] == df['Price_High'].iloc[i]:
-            if last_p_high != -1:
-                # Math: Price HH, RSI LH
-                if df['High'].iloc[i] > df['High'].iloc[last_p_high] and df['RSI'].iloc[i] < df['RSI'].iloc[last_p_high]:
-                    if df['RSI'].iloc[i] > 65: # Quality overbought check
-                        bear_lines.append(((df.index[last_p_high], df['RSI'].iloc[last_p_high]), (df.index[i], df['RSI'].iloc[i])))
-                        bear_lines.append(((df.index[last_p_high], df['High'].iloc[last_p_high]), (df.index[i], df['High'].iloc[i]), 'price')) # Price overlay
-            last_p_high = i
-            
-    return bull_lines, bear_lines
+with tab1:
+    # --- SIDEBAR CONTROLS ---
+    st.sidebar.title("Sniper Controls")
+    risk_amt = st.sidebar.number_input("Risk Amount (₹)", value=2000)
+    tf_options = {"1 Day": "1d", "1 Week": "1wk", "1 Hour": "1h", "15 Min": "15m", "5 Min": "5m"}
+    selected_tf = st.sidebar.selectbox("Timeframe", list(tf_options.keys()), index=0)
+    interval = tf_options[selected_tf]
+    
+    ticker = st.sidebar.selectbox("Active Ticker", st.session_state.watchlist)
+    st.sidebar.markdown("---")
+    zoom_range = st.sidebar.slider("Chart View (Bars)", 50, 500, 150)
 
-# --- MAIN DASHBOARD EXECUTION ---
-st.title(f"Institutional Sniper Terminal - {ticker}")
-
-if ticker:
-    try:
-        data_period = "2y" if interval in ["1d", "1wk"] else "60d"
-        with st.spinner(f'Analyzing {ticker} Structure...'):
-            raw_df = yf.download(ticker, period=data_period, interval=interval, progress=False, auto_adjust=True)
+    # --- DATA FETCHING ---
+    if ticker:
+        try:
+            period = "2y" if interval in ["1d", "1wk"] else "60d"
+            df_raw = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
             
-            if not raw_df.empty:
-                df = raw_df.copy()
+            if not df_raw.empty:
+                df = df_raw.copy()
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.get_level_values(0)
                 
                 # Calculations
                 df['EMA200'] = ta.ema(df['Close'], length=200)
                 df['RSI'] = ta.rsi(df['Close'], length=14)
-                bull_lines, bear_lines = calculate_divergence_lines(df)
                 
-                # Anchored VWAP (Topsupply & Bot Support)
+                # AVWAP Support/Resistance
                 top_idx, bot_idx = df['High'].argmax(), df['Low'].argmin()
                 def calc_avwap(df, idx):
                     temp = df.iloc[idx:].copy()
@@ -93,60 +64,58 @@ if ticker:
                 df['AVWAP_TOP'] = calc_avwap(df, top_idx)
                 df['AVWAP_BOT'] = calc_avwap(df, bot_idx)
 
-                # --- PLOTLY TERMINAL SUBPLOTS ---
-                fig = make_subplots(rows=3, cols=1, shared_xaxes=True, 
-                                    vertical_spacing=0.03, row_width=[0.2, 0.2, 0.6],
-                                    subplot_titles=(f'Institutional Price Structure ({selected_tf})', 'Volume Profile', 'RSI with Fixed Line Divergence'))
+                # --- VOLUME PROFILE CALCULATION ---
+                # We calculate volume at price levels for the 'Visible Range'
+                visible_df = df.tail(zoom_range)
+                price_min, price_max = visible_df['Low'].min(), visible_df['High'].max()
+                bins = np.linspace(price_min, price_max, 40)
+                v_profile = visible_df.groupby(pd.cut(visible_df['Close'], bins))['Volume'].sum()
+                bin_centers = [b.mid for b in v_profile.index]
 
-                # Row 1: Price + Overlays
+                # --- CHART CONSTRUCTION ---
+                fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, 
+                                    row_width=[0.2, 0.2, 0.6], 
+                                    specs=[[{"secondary_y": True}], [{}], [{}]])
+
+                # 1. MAIN PRICE CHART
                 fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"), row=1, col=1)
-                fig.add_trace(go.Scatter(x=df.index, y=df['AVWAP_TOP'], line=dict(color='red', width=2), name="Top Supply"), row=1, col=1)
-                fig.add_trace(go.Scatter(x=df.index, y=df['AVWAP_BOT'], line=dict(color='green', width=2), name="Bot Support"), row=1, col=1)
-                fig.add_trace(go.Scatter(x=df.index, y=df['EMA200'], line=dict(color='white', dash='dot', width=1), name="EMA 200"), row=1, col=1)
+                fig.add_trace(go.Scatter(x=df.index, y=df['EMA200'], line=dict(color='orange', dash='dot'), name="EMA 200"), row=1, col=1)
+                fig.add_trace(go.Scatter(x=df.index, y=df['AVWAP_TOP'], line=dict(color='red', width=2), name="AVWAP TOP"), row=1, col=1)
+                fig.add_trace(go.Scatter(x=df.index, y=df['AVWAP_BOT'], line=dict(color='green', width=2), name="AVWAP BOT"), row=1, col=1)
+
+                # 2. VOLUME PROFILE (Overlay on Price)
+                fig.add_trace(go.Bar(y=bin_centers, x=v_profile.values, orientation='h', name="Volume Profile",
+                                     marker_color='rgba(100, 150, 255, 0.2)', hoverinfo='skip'), row=1, col=1, secondary_y=True)
+
+                # 3. VOLUME BARS
+                v_colors = ['green' if df['Open'].iloc[i] < df['Close'].iloc[i] else 'red' for i in range(len(df))]
+                fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=v_colors, name="Volume"), row=2, col=1)
+
+                # 4. RSI
+                fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='purple'), name="RSI"), row=3, col=1)
+                fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
+                fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
+
+                # NAVIGATION & LAYOUT
+                fig.update_layout(template="plotly_dark", height=800, xaxis_rangeslider_visible=False,
+                                  showlegend=False, margin=dict(l=10, r=10, b=10, t=50),
+                                  xaxis=dict(range=[df.index[-zoom_range], df.index[-1]]))
                 
-                # Divergence Overlays on Price (Connecting Troughs and Peaks)
-                for line in bull_lines:
-                    if len(line) == 3 and line[2] == 'price':
-                        fig.add_trace(go.Scatter(x=[line[0][0], line[1][0]], y=[line[0][1], line[1][1]], mode='lines+markers', line=dict(color='lime', width=1), showlegend=False), row=1, col=1)
-                for line in bear_lines:
-                    if len(line) == 3 and line[2] == 'price':
-                        fig.add_trace(go.Scatter(x=[line[0][0], line[1][0]], y=[line[0][1], line[1][1]], mode='lines+markers', line=dict(color='red', width=1), showlegend=False), row=1, col=1)
-
-                # Row 2: Volume
-                colors = ['#1a9c37' if df['Open'].iloc[i] < df['Close'].iloc[i] else '#d92c2c' for i in range(len(df))]
-                fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors, name="Volume"), row=2, col=1)
-
-                # Row 3: RSI + Divergence Lines
-                fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='purple', width=2), name="RSI"), row=3, col=1)
-                fig.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought", row=3, col=1)
-                fig.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold", row=3, col=1)
+                # Disable primary chart y-axis scaling for Volume Profile overlay
+                fig.update_yaxes(showgrid=False, secondary_y=True, showticklabels=False)
                 
-                # DRAW THE DIVERGENCE LINES (The core fix)
-                for line in bull_lines:
-                    if len(line) == 2: # Plot standard line on RSI
-                        fig.add_trace(go.Scatter(x=[line[0][0], line[1][0]], y=[line[0][1], line[1][1]], mode='lines+markers', line=dict(color='lime', width=3), name="Bull Div Line"), row=3, col=1)
-                for line in bear_lines:
-                    if len(line) == 2: # Plot standard line on RSI
-                        fig.add_trace(go.Scatter(x=[line[0][0], line[1][0]], y=[line[0][1], line[1][1]], mode='lines+markers', line=dict(color='red', width=3), name="Bear Div Line"), row=3, col=1)
-
-                # Dashboard Layout Optimization
-                fig.update_layout(template="plotly_dark", height=850, xaxis_rangeslider_visible=False, showlegend=False, 
-                                  margin=dict(l=10, r=10, b=10, t=50))
                 st.plotly_chart(fig, use_container_width=True)
 
-                # --- INSTANT EXECUTION REPORT (Side Metric) ---
+                # --- EXECUTION MATH ---
                 curr = df.iloc[-1]
                 entry, sl = curr['Close'], curr['Low']
                 diff = entry - sl
                 qty = int(risk_amt / diff) if diff > 0 else 0
                 
-                st.markdown("---")
-                st.subheader("Monday Morning Execution Plan")
-                colA, colB, colC, colD = st.columns(4)
-                colA.metric(f"Current {ticker} Price", f"₹{round(entry, 2)}")
-                colB.metric("Qty (Risk ₹2k)", f"{qty} Shares")
-                colC.metric("Stop Loss Level", f"₹{round(sl, 2)}")
-                colD.metric("Target Level (1:2)", f"₹{round(entry + (diff * 2), 2)}")
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Strategy Signal", "A++ SETUP" if (curr['Close'] > df['EMA200'].iloc[-1] and curr['RSI'] < 35) else "WAITING")
+                col2.metric("Buy Quantity", f"{qty} Shares")
+                col3.metric("Trade Target (1:2)", f"₹{round(entry + (diff * 2), 2)}")
 
-    except Exception as e:
-        st.error(f"Analysis Error: {e}")
+        except Exception as e:
+            st.error(f"Analysis Error: {e}")
