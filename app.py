@@ -175,65 +175,26 @@ def run_backtest(df, risk_per_trade=2000):
         (df['Trend'])
     )
 
-    # Stoploss = previous swing low
-    df['SL'] = df['Low'].rolling(5).min().shift(1)
+  # Stoploss = previous swing low
+df['SL'] = df['Low'].rolling(5).min().shift(1)
 
-    # Risk and Target
-    df['Risk'] = df['Close'] - df['SL']
-    df['Target'] = df['Close'] + df['Risk'] * 2
+# Clean SL
+df['SL'] = df['SL'].replace([np.inf, -np.inf], np.nan)
+df['SL'] = df['SL'].fillna(method='bfill')   # fallback SL
+df['SL'] = df['SL'].fillna(df['Low'])        # absolute fallback
 
-    # Position size
-    df['Qty'] = (risk_per_trade / df['Risk']).clip(lower=0).astype(int)
+# Risk and Target
+df['Risk'] = df['Close'] - df['SL']
+df['Risk'] = df['Risk'].replace([np.inf, -np.inf], np.nan)
+df['Risk'] = df['Risk'].fillna(0)
 
-    trades = []
-    in_trade = False
-    entry_i = None
-    entry_price = sl = tgt = qty = None
+# Position size
+df['Qty'] = risk_per_trade / df['Risk']
+df['Qty'] = df['Qty'].replace([np.inf, -np.inf], np.nan)
+df['Qty'] = df['Qty'].fillna(0)
+df['Qty'] = df['Qty'].clip(lower=0).astype(int)
 
-    for i in range(len(df)):
-        if not in_trade and df['Entry'].iloc[i] and df['Qty'].iloc[i] > 0 and df['SL'].iloc[i] > 0:
-            entry_i = i
-            entry_price = float(df['Close'].iloc[i])
-            sl = float(df['SL'].iloc[i])
-            tgt = float(df['Target'].iloc[i])
-            qty = int(df['Qty'].iloc[i])
-            in_trade = True
-            continue
-
-        if in_trade:
-            low = float(df['Low'].iloc[i])
-            high = float(df['High'].iloc[i])
-
-            # SL hit
-            if low <= sl:
-                trades.append({
-                    'Entry': df.index[entry_i],
-                    'Exit': df.index[i],
-                    'EntryPrice': entry_price,
-                    'ExitPrice': sl,
-                    'Qty': qty,
-                    'PnL': (sl - entry_price) * qty
-                })
-                in_trade = False
-                continue
-
-            # Target hit
-            if high >= tgt:
-                trades.append({
-                    'Entry': df.index[entry_i],
-                    'Exit': df.index[i],
-                    'EntryPrice': entry_price,
-                    'ExitPrice': tgt,
-                    'Qty': qty,
-                    'PnL': (tgt - entry_price) * qty
-                })
-                in_trade = False
-                continue
-
-    if len(trades) == 0:
-        return pd.DataFrame(columns=['Entry', 'Exit', 'EntryPrice', 'ExitPrice', 'Qty', 'PnL'])
-
-    return pd.DataFrame(trades)
+   
 
 # ─────────────────────────────────────────────
 # MAIN DASHBOARD
