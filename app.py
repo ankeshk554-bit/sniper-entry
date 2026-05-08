@@ -1,6 +1,5 @@
 import streamlit as st
 import yfinance as yf
-import pandas_ta as ta
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -110,9 +109,34 @@ with st.sidebar:
     st.markdown(f"<div>{chips_html}</div>", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# DIVERGENCE CALCULATOR
+# INDICATOR HELPERS (FAST)
+# ─────────────────────────────────────────────
+def ema(series, span):
+    return series.ewm(span=span, adjust=False).mean()
+
+def rsi(series, length=14):
+    delta = series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.rolling(length).mean()
+    avg_loss = loss.rolling(length).mean()
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+def fast_avwap(df, start_idx):
+    c = df['Close'].values[start_idx:]
+    v = df['Volume'].values[start_idx:]
+    cv = np.cumsum(c * v)
+    vv = np.cumsum(v)
+    out = np.full(len(df), np.nan)
+    out[start_idx:] = cv / vv
+    return out
+
+# ─────────────────────────────────────────────
+# DIVERGENCE CALCULATOR (same logic, kept simple)
 # ─────────────────────────────────────────────
 def calculate_divergence_lines(df, window=5):
+    df = df.copy()
     df['Price_Low'] = df['Low'].rolling(window=window*2+1, center=True).min()
     df['Price_High'] = df['High'].rolling(window=window*2+1, center=True).max()
     bull_lines, bear_lines = [], []
@@ -136,6 +160,82 @@ def calculate_divergence_lines(df, window=5):
     return bull_lines, bear_lines
 
 # ─────────────────────────────────────────────
+# BACKTEST ENGINE (Ultra‑Fast)
+# ─────────────────────────────────────────────
+def run_backtest(df, risk_per_trade=2000):
+    df = df.copy()
+
+    # Trend filter
+    df['Trend'] = df['Close'] > df['EMA200']
+
+    # Entry signal: RSI oversold + price above AVWAP_BOT + trend up
+    df['Entry'] = (
+        (df['RSI'] < 32) &
+        (df['Close'] > df['AVWAP_BOT']) &
+        (df['Trend'])
+    )
+
+    # Stoploss = previous swing low
+    df['SL'] = df['Low'].rolling(5).min().shift(1)
+
+    # Risk and Target
+    df['Risk'] = df['Close'] - df['SL']
+    df['Target'] = df['Close'] + df['Risk'] * 2
+
+    # Position size
+    df['Qty'] = (risk_per_trade / df['Risk']).clip(lower=0).astype(int)
+
+    trades = []
+    in_trade = False
+    entry_i = None
+    entry_price = sl = tgt = qty = None
+
+    for i in range(len(df)):
+        if not in_trade and df['Entry'].iloc[i] and df['Qty'].iloc[i] > 0 and df['SL'].iloc[i] > 0:
+            entry_i = i
+            entry_price = float(df['Close'].iloc[i])
+            sl = float(df['SL'].iloc[i])
+            tgt = float(df['Target'].iloc[i])
+            qty = int(df['Qty'].iloc[i])
+            in_trade = True
+            continue
+
+        if in_trade:
+            low = float(df['Low'].iloc[i])
+            high = float(df['High'].iloc[i])
+
+            # SL hit
+            if low <= sl:
+                trades.append({
+                    'Entry': df.index[entry_i],
+                    'Exit': df.index[i],
+                    'EntryPrice': entry_price,
+                    'ExitPrice': sl,
+                    'Qty': qty,
+                    'PnL': (sl - entry_price) * qty
+                })
+                in_trade = False
+                continue
+
+            # Target hit
+            if high >= tgt:
+                trades.append({
+                    'Entry': df.index[entry_i],
+                    'Exit': df.index[i],
+                    'EntryPrice': entry_price,
+                    'ExitPrice': tgt,
+                    'Qty': qty,
+                    'PnL': (tgt - entry_price) * qty
+                })
+                in_trade = False
+                continue
+
+    if len(trades) == 0:
+        return pd.DataFrame(columns=['Entry', 'Exit', 'EntryPrice', 'ExitPrice', 'Qty', 'PnL'])
+
+    return pd.DataFrame(trades)
+
+# ─────────────────────────────────────────────
 # MAIN DASHBOARD
 # ─────────────────────────────────────────────
 st.title(f"⚡ Terminal Scan: {ticker}")
@@ -145,51 +245,142 @@ try:
     df = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
     
     if not df.empty:
-        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
         
-        df['EMA200'] = ta.ema(df['Close'], length=200)
-        df['EMA50']  = ta.ema(df['Close'], length=50)
-        df['RSI']    = ta.rsi(df['Close'], length=14)
+        # Indicators (fast)
+        df['EMA200'] = ema(df['Close'], 200)
+        df['EMA50']  = ema(df['Close'], 50)
+        df['RSI']    = rsi(df['Close'], 14)
+
+        # AVWAP Support/Supply (fast)
+        t_idx = int(df['High'].argmax())
+        b_idx = int(df['Low'].argmin())
+        df['AVWAP_TOP'] = fast_avwap(df, t_idx)
+        df['AVWAP_BOT'] = fast_avwap(df, b_idx)
+
+        # Divergence (optional visual, not used in backtest yet)
         bull_lines, bear_lines = calculate_divergence_lines(df)
 
-        # AVWAP Support/Supply
-        t_idx, b_idx = df['High'].argmax(), df['Low'].argmin()
-        def av(idx):
-            tmp = df.iloc[idx:].copy()
-            return (tmp['Close'] * tmp['Volume']).cumsum() / tmp['Volume'].cumsum()
-        df['AVWAP_TOP'] = av(t_idx)
-        df['AVWAP_BOT'] = av(b_idx)
-
         # Chart Construction
-        fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.6, 0.15, 0.25])
-        fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['EMA200'], line=dict(color="#4f6ef7", width=1.5, dash="dot"), name="EMA 200"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['AVWAP_TOP'], line=dict(color="#ff3d5a", width=1.5), name="AVWAP Supply"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['AVWAP_BOT'], line=dict(color="#00e676", width=1.5), name="AVWAP Support"), row=1, col=1)
-        
+        fig = make_subplots(
+            rows=3, cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.03,
+            row_heights=[0.6, 0.15, 0.25]
+        )
+
+        # Price
+        fig.add_trace(go.Candlestick(
+            x=df.index,
+            open=df['Open'],
+            high=df['High'],
+            low=df['Low'],
+            close=df['Close'],
+            name="Price"
+        ), row=1, col=1)
+
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df['EMA200'],
+            line=dict(color="#4f6ef7", width=1.5, dash="dot"),
+            name="EMA 200"
+        ), row=1, col=1)
+
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df['AVWAP_TOP'],
+            line=dict(color="#ff3d5a", width=1.5),
+            name="AVWAP Supply"
+        ), row=1, col=1)
+
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df['AVWAP_BOT'],
+            line=dict(color="#00e676", width=1.5),
+            name="AVWAP Support"
+        ), row=1, col=1)
+
         # Volume
         v_colors = ["#00e676" if df['Open'].iloc[i] < df['Close'].iloc[i] else "#ff3d5a" for i in range(len(df))]
-        fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=v_colors, name="Volume"), row=2, col=1)
-        
+        fig.add_trace(go.Bar(
+            x=df.index, y=df['Volume'],
+            marker_color=v_colors,
+            name="Volume"
+        ), row=2, col=1)
+
         # RSI
-        fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color="#00b8d9", width=1.5), name="RSI"), row=3, col=1)
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df['RSI'],
+            line=dict(color="#00b8d9", width=1.5),
+            name="RSI"
+        ), row=3, col=1)
+
         fig.add_hline(y=70, line_dash="dash", line_color="#ff3d5a", row=3, col=1)
         fig.add_hline(y=30, line_dash="dash", line_color="#00e676", row=3, col=1)
 
-        fig.update_layout(template="plotly_dark", height=800, xaxis_rangeslider_visible=False, paper_bgcolor="#08090d", plot_bgcolor="#08090d", margin=dict(l=0, r=0, b=0, t=10))
+        fig.update_layout(
+            template="plotly_dark",
+            height=800,
+            xaxis_rangeslider_visible=False,
+            paper_bgcolor="#08090d",
+            plot_bgcolor="#08090d",
+            margin=dict(l=0, r=0, b=0, t=10)
+        )
+
         st.plotly_chart(fig, use_container_width=True)
 
-        # Execution Plan Logic
+        # ─────────────────────────────────────
+        # BACKTEST RESULTS
+        # ─────────────────────────────────────
+        st.subheader("📈 Backtest Results")
+
+        bt = run_backtest(df, risk_amt)
+
+        if bt.empty:
+            st.warning("No trades triggered for this strategy in the selected period.")
+        else:
+            bt['Equity'] = bt['PnL'].cumsum()
+            max_dd = (bt['Equity'].cummax() - bt['Equity']).max()
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Total Trades", len(bt))
+            c2.metric("Win Rate", f"{(bt['PnL'] > 0).mean()*100:.1f}%")
+            c3.metric("Net PnL", f"₹{bt['PnL'].sum():,.0f}")
+            c4.metric("Max Drawdown", f"₹{max_dd:,.0f}")
+
+            st.dataframe(bt)
+
+            fig_bt = go.Figure()
+            fig_bt.add_trace(go.Scatter(
+                x=bt['Exit'],
+                y=bt['Equity'],
+                mode='lines',
+                line=dict(color="#4f6ef7")
+            ))
+            fig_bt.update_layout(
+                height=300,
+                template="plotly_dark",
+                margin=dict(l=0, r=0, t=10, b=0),
+                paper_bgcolor="#08090d",
+                plot_bgcolor="#08090d",
+            )
+            st.plotly_chart(fig_bt, use_container_width=True)
+
+        # ─────────────────────────────────────
+        # EXECUTION PLAN (LIVE BAR)
+        # ─────────────────────────────────────
         curr = df.iloc[-1]
-        entry, sl = float(curr['Close']), float(curr['Low'])
+        entry = float(curr['Close'])
+        sl = float(curr['Low'])
         diff = entry - sl
         qty = int(risk_amt / diff) if diff > 0 else 0
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Live Price", f"₹{entry:,.2f}")
-        c2.metric("Qty (Risk ₹{risk_amt})", f"{qty}")
+        c2.metric(f"Qty (Risk ₹{risk_amt})", f"{qty}")
         c3.metric("Stop Loss", f"₹{sl:,.2f}", delta=f"-₹{diff:.2f}", delta_color="inverse")
         c4.metric("Target (1:2)", f"₹{entry + (diff*2):,.2f}")
+
+    else:
+        st.error("No data returned for this ticker/timeframe.")
 
 except Exception as e:
     st.error(f"Analysis Error: {e}")
