@@ -84,7 +84,7 @@ with st.sidebar:
         <div style='font-family:Syne,sans-serif;font-size:1.1rem;font-weight:800;color:white;letter-spacing:0.04em'>
             ⚡ SNIPER <span style='color:#4f6ef7'>TERMINAL</span>
         </div>
-        <div style='font-size:0.6rem;color:#505872;letter-spacing:0.12em;margin-top:2px'>SWING ENGINE v2.1</div>
+        <div style='font-size:0.6rem;color:#505872;letter-spacing:0.12em;margin-top:2px'>SWING ENGINE v2.2</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -93,7 +93,10 @@ with st.sidebar:
     tf_options = {"1W — Weekly": "1wk", "1D — Daily": "1d", "4H — 4 Hour": "4h"}
     selected_tf_label = st.selectbox("Timeframe", list(tf_options.keys()), index=1)
     interval = tf_options[selected_tf_label]
+
     risk_amt = st.number_input("Risk per Trade (₹)", value=2000, step=500)
+
+    use_mtf = st.checkbox("Use Weekly Trend Filter (MTF)", value=True)
 
     st.markdown("### Watchlist")
     chips_html = "".join([f"<span class='watchlist-chip'>{t}</span>" for t in st.session_state.watchlist])
@@ -124,20 +127,28 @@ def fast_avwap(df, start_idx):
     return out
 
 # ─────────────────────────────────────────────
-# BACKTEST ENGINE (SAFE, CLEAN)
+# BACKTEST ENGINE (WITH WEEKLY TREND FILTER)
 # ─────────────────────────────────────────────
-def run_backtest(df, risk_per_trade=2000):
+def run_backtest(df, risk_per_trade=2000, use_mtf=True):
     df = df.copy()
 
-    # Trend filter
+    # Daily trend
     df['Trend'] = df['Close'] > df['EMA200']
 
-    # Entry condition
-    df['Entry'] = (
-        (df['RSI'] < 32) &
-        (df['Close'] > df['AVWAP_BOT']) &
-        (df['Trend'])
-    )
+    # Entry condition (MTF optional)
+    if use_mtf:
+        df['Entry'] = (
+            (df['RSI'] < 32) &
+            (df['Close'] > df['AVWAP_BOT']) &
+            (df['Trend']) &
+            (df['TrendW'])     # Weekly trend
+        )
+    else:
+        df['Entry'] = (
+            (df['RSI'] < 32) &
+            (df['Close'] > df['AVWAP_BOT']) &
+            (df['Trend'])
+        )
 
     # Stoploss = previous swing low
     df['SL'] = df['Low'].rolling(5).min().shift(1)
@@ -160,8 +171,6 @@ def run_backtest(df, risk_per_trade=2000):
 
     trades = []
     in_trade = False
-    entry_i = None
-    entry_price = sl = tgt = qty = None
 
     for i in range(len(df)):
         if (not in_trade) and df['Entry'].iloc[i] and df['Qty'].iloc[i] > 0 and df['Risk'].iloc[i] > 0:
@@ -178,7 +187,6 @@ def run_backtest(df, risk_per_trade=2000):
             low = float(df['Low'].iloc[i])
             high = float(df['High'].iloc[i])
 
-            # SL hit
             if low <= sl:
                 trades.append({
                     'Entry': df.index[entry_i],
@@ -191,7 +199,6 @@ def run_backtest(df, risk_per_trade=2000):
                 in_trade = False
                 continue
 
-            # Target hit
             if high >= tgt:
                 trades.append({
                     'Entry': df.index[entry_i],
@@ -222,10 +229,17 @@ try:
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        # Indicators
+        # Daily indicators
         df['EMA200'] = ema(df['Close'], 200)
         df['EMA50']  = ema(df['Close'], 50)
         df['RSI']    = rsi(df['Close'], 14)
+
+        # Weekly trend filter
+        df_w = yf.download(ticker, period="5y", interval="1wk", auto_adjust=True)
+        df_w['EMA200'] = ema(df_w['Close'], 200)
+        df_w['TrendW'] = df_w['Close'] > df_w['EMA200']
+
+        df['TrendW'] = df_w['TrendW'].reindex(df.index, method='ffill')
 
         # AVWAP
         t_idx = int(df['High'].argmax())
@@ -243,7 +257,6 @@ try:
             row_heights=[0.6, 0.15, 0.25]
         )
 
-        # Price
         fig.add_trace(go.Candlestick(
             x=df.index,
             open=df['Open'],
@@ -305,7 +318,7 @@ try:
         # ─────────────────────────────────────────
         st.subheader("📈 Backtest Results")
 
-        bt = run_backtest(df, risk_amt)
+        bt = run_backtest(df, risk_amt, use_mtf)
 
         if bt.empty:
             st.warning("No trades triggered for this strategy.")
