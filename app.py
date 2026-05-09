@@ -121,12 +121,12 @@ def apply_divergence_engine(df):
     return df, div_pairs
 
 # ============================
-# 9. CLEAN BACKTEST ENGINE (FIXED)
+# 9. CLEAN BACKTEST ENGINE (FINAL FIX)
 # ============================
 def run_backtest(df, divergence_pairs, risk_per_trade=2000):
     df = df.copy()
-    df = df[~df.index.duplicated(keep='first')]
-    df = df.sort_index()
+    df = df.reset_index(drop=False)   # <-- FIX: force RangeIndex
+    df = df.reset_index(drop=True)    # <-- FIX: clean 0..N index
 
     trades = []
     equity = 0
@@ -151,7 +151,6 @@ def run_backtest(df, divergence_pairs, risk_per_trade=2000):
         sl_distance = 1.5 * atr_val
         sl_price = open_next - sl_distance
 
-        # skip trade if gap below SL
         if open_next < sl_price:
             continue
 
@@ -183,8 +182,8 @@ def run_backtest(df, divergence_pairs, risk_per_trade=2000):
         equity += pnl
 
         trades.append({
-            "Entry": df.index[entry_index],
-            "Exit": df.index[exit_index],
+            "Entry": df['index'].iloc[entry_index],
+            "Exit": df['index'].iloc[exit_index],
             "EntryPrice": open_next,
             "ExitPrice": exit_price,
             "Qty": qty,
