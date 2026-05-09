@@ -102,6 +102,7 @@ def apply_divergence_engine(df):
     mask = detect_strict_swing_lows(df)
     divs = detect_rsi_bullish_divergence(df, mask)
     return df, divs
+
 # ============================================================
 # STRENGTH SCORE
 # ============================================================
@@ -137,7 +138,6 @@ def scan_stock(ticker, interval, use_trend, fresh_only):
 
         i1, i2 = divs[-1]
 
-        # ⭐ Fresh divergence filter
         if fresh_only and i2 < len(df)-3:
             return None
 
@@ -294,6 +294,7 @@ def run_backtest(df, divs, risk, trend_series, use_trend):
         })
 
     return trades, equity
+
 # ============================================================
 # STREAMLIT UI
 # ============================================================
@@ -310,32 +311,22 @@ def main():
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            universe = st.selectbox("Universe", ["NIFTY200", "Custom"], key="universe_sel")
+            universe = st.selectbox("Universe", ["NIFTY200", "Custom"])
         with col2:
-            interval_s = st.selectbox("Timeframe", ["1d", "1h", "15m"], key="screener_tf")
+            interval_s = st.selectbox("Timeframe", ["1d", "1h", "15m"])
         with col3:
-            mode = st.selectbox("View Mode", ["Simple", "Detailed"], key="view_mode_sel")
+            mode = st.selectbox("View Mode", ["Simple", "Detailed"])
 
-        use_trend = st.checkbox(
-            "Use Weekly Trend Filter (EMA200 + RSI>50)",
-            value=True,
-            key="trend_filter_screener"
-        )
-
-        # ⭐ NEW TOGGLE
-        fresh_only = st.checkbox(
-            "Show Only Fresh Divergences (Last 3 Candles)",
-            value=True,
-            key="fresh_only_toggle"
-        )
+        use_trend = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True)
+        fresh_only = st.checkbox("Show Only Fresh Divergences (Last 3 Candles)", value=True)
 
         if universe == "Custom":
-            custom = st.text_input("Enter tickers", "HAL.NS", key="custom_tickers")
+            custom = st.text_input("Enter tickers", "HAL.NS")
             tickers = [x.strip() for x in custom.split(",") if x.strip()]
         else:
             tickers = NIFTY200
 
-        if st.button("Run Screener", key="run_screener_btn"):
+        if st.button("Run Screener"):
             st.info("Scanning…")
 
             results = []
@@ -350,32 +341,18 @@ def main():
                 df_res = pd.DataFrame(results).sort_values("Strength", ascending=False)
 
                 if mode == "Simple":
-                    st.dataframe(
-                        df_res[["Ticker", "SignalDate", "Strength"]],
-                        use_container_width=True
-                    )
+                    st.dataframe(df_res[["Ticker", "SignalDate", "Strength"]], use_container_width=True)
                 else:
                     st.dataframe(df_res, use_container_width=True)
 
-                selected = st.selectbox(
-                    "Select a ticker to view chart",
-                    df_res["Ticker"],
-                    key="chart_ticker_select"
-                )
+                selected = st.selectbox("Select a ticker to view chart", df_res["Ticker"])
 
                 if selected:
                     row = df_res[df_res["Ticker"] == selected].iloc[0]
                     ticker = row["Ticker"]
                     i1, i2 = int(row["i1"]), int(row["i2"])
 
-                    df = yf.download(
-                        ticker,
-                        period="1y",
-                        interval=interval_s,
-                        auto_adjust=True,
-                        progress=False
-                    )
-
+                    df = yf.download(ticker, period="1y", interval=interval_s, auto_adjust=True, progress=False)
                     if isinstance(df.columns, pd.MultiIndex):
                         df.columns = df.columns.get_level_values(0)
 
@@ -385,11 +362,9 @@ def main():
                     if trend_series is not None:
                         df["TrendW"] = trend_series.reindex(df.index, method="ffill")
 
-                                 with st.expander(f"📈 Full-Screen Chart – {ticker}", expanded=True):
-                    fig = plot_ultra_pro_chart(df, i1, i2, df.get("TrendW"))
-                    st.plotly_chart(fig, use_container_width=True)
-
-
+                    with st.expander(f"📈 Full-Screen Chart – {ticker}", expanded=True):
+                        fig = plot_ultra_pro_chart(df, i1, i2, df.get("TrendW"))
+                        st.plotly_chart(fig, use_container_width=True)
 
     # ============================================================
     # BACKTEST TAB
@@ -397,55 +372,14 @@ def main():
     with tab_backtest:
         st.title("Sniper Backtester")
 
-        ticker = st.text_input("Ticker", "HAL.NS", key="bt_ticker")
-        interval_b = st.selectbox("Timeframe", ["1d", "1h", "15m"], key="backtest_tf")
-        risk = st.number_input("Risk per Trade (₹)", value=2000, key="bt_risk")
-        years = st.slider("Years of Data", 1, 5, 2, key="bt_years")
-        use_trend_bt = st.checkbox(
-            "Use Weekly Trend Filter (EMA200 + RSI>50)",
-            value=True,
-            key="trend_filter_bt"
-        )
+        ticker = st.text_input("Ticker", "HAL.NS")
+        interval_b = st.selectbox("Timeframe", ["1d", "1h", "15m"])
+        risk = st.number_input("Risk per Trade (₹)", value=2000)
+        years = st.slider("Years of Data", 1, 5, 2)
+        use_trend_bt = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True)
 
-        if st.button("Run Backtest", key="run_backtest_btn"):
+        if st.button("Run Backtest"):
             end = date.today()
             start = end - timedelta(days=365 * years)
 
-            df = yf.download(
-                ticker,
-                start=start,
-                end=end,
-                interval=interval_b,
-                auto_adjust=True,
-                progress=False
-            )
-
-            if df.empty:
-                st.error("No data available for this ticker.")
-                return
-
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-
-            df = df.apply(pd.to_numeric, errors="coerce")
-            df, divs = apply_divergence_engine(df)
-
-            trend_series = get_weekly_trend(ticker) if use_trend_bt else None
-
-            trades, eq = run_backtest(df, divs, risk, trend_series, use_trend_bt)
-            df_trades = pd.DataFrame(trades)
-
-            if df_trades.empty:
-                st.info("No trades generated.")
-            else:
-                st.subheader("Backtest Results")
-                st.dataframe(df_trades, use_container_width=True)
-
-                st.metric("Total PnL", f"₹{round(eq, 2)}")
-                st.metric("Total Trades", len(df_trades))
-
-# ============================================================
-# MAIN ENTRY POINT
-# ============================================================
-if __name__ == "__main__":
-    main()
+            df = yf.download(ticker, start=start, end=end, interval=interval_b, auto_adjust=True, progress
