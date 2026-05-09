@@ -571,8 +571,9 @@ def render_watchlist_panel(df_res=None):
 def plot_ultra_pro_chart(df, bull_divs, bear_divs,
                          show_ema=True, show_avwap=True,
                          show_vwap_top=True, show_vwap_bottom=True,
-                         show_div=True=True, show_rsi=True,
+                         show_divergences=True, show_rsi=True,
                          zoom_range="1Y"):
+
     df = df.copy()
     if df.empty:
         return go.Figure()
