@@ -1,7 +1,8 @@
-import numpy as np
-import pandas as pd
-
 def run_backtest(df, divergence_pairs, risk_per_trade=2000):
+    # FIX: ensure no duplicate index rows
+    df = df[~df.index.duplicated(keep='first')].copy()
+    df = df.sort_index()
+
     trades = []
     equity = 0
     df = df.copy()
@@ -12,16 +13,25 @@ def run_backtest(df, divergence_pairs, risk_per_trade=2000):
         if i not in divergence_entries:
             continue
 
-        if df['Close'].iloc[i] < df['EMA200'].iloc[i]:
+        # Trend filter
+        close_i = df['Close'].iloc[i]
+        ema_i = df['EMA200'].iloc[i]
+
+        if pd.isna(close_i) or pd.isna(ema_i):
             continue
 
-        if df['Close'].iloc[i] < df['AVWAP'].iloc[i]:
+        if close_i < ema_i:
             continue
 
-        entry_price = df['Close'].iloc[i]
+        # AVWAP filter
+        avwap_i = df['AVWAP'].iloc[i]
+        if pd.isna(avwap_i) or close_i < avwap_i:
+            continue
+
+        entry_price = close_i
         atr_val = df['ATR'].iloc[i]
 
-        if np.isnan(atr_val) or atr_val == 0:
+        if pd.isna(atr_val) or atr_val == 0:
             continue
 
         sl_distance = 1.5 * atr_val
@@ -65,15 +75,3 @@ def run_backtest(df, divergence_pairs, risk_per_trade=2000):
         })
 
     return trades, equity
-
-def trades_to_df(trades):
-    if len(trades) == 0:
-        return pd.DataFrame(columns=[
-            "Entry", "Exit", "EntryPrice", "ExitPrice", "Qty", "PnL", "Equity"
-        ])
-    return pd.DataFrame(trades)
-
-def build_equity_curve(trades_df):
-    if len(trades_df) == 0:
-        return pd.Series(dtype=float)
-    return trades_df["Equity"]
