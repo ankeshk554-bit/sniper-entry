@@ -16,13 +16,10 @@ def ema(series, length):
 # ============================
 def rsi(series, length=14):
     delta = series.diff()
-
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-
     gain_ema = gain.ewm(span=length, adjust=False).mean()
     loss_ema = loss.ewm(span=length, adjust=False).mean()
-
     rs = gain_ema / loss_ema
     return 100 - (100 / (1 + rs))
 
@@ -33,11 +30,9 @@ def atr(df, length=14):
     high = df['High']
     low = df['Low']
     close = df['Close']
-
     tr1 = high - low
     tr2 = (high - close.shift()).abs()
     tr3 = (low - close.shift()).abs()
-
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     return tr.ewm(span=length, adjust=False).mean()
 
@@ -56,7 +51,6 @@ def avwap(df):
 def detect_strict_swing_lows(df):
     lows = df['Low'].values
     swing_low = np.zeros(len(df), dtype=bool)
-
     for i in range(2, len(df) - 2):
         if (
             lows[i] < lows[i - 1] and
@@ -65,7 +59,6 @@ def detect_strict_swing_lows(df):
             lows[i] < lows[i + 2]
         ):
             swing_low[i] = True
-
     return swing_low
 
 # ============================
@@ -75,13 +68,11 @@ def detect_rsi_bullish_divergence(df, swing_low_mask):
     divergence_points = []
     lows = df['Low'].values
     rsi_vals = df['RSI'].values
-
     swing_indices = np.where(swing_low_mask)[0]
 
     for i in range(1, len(swing_indices)):
         i1 = swing_indices[i - 1]
         i2 = swing_indices[i]
-
         if lows[i2] < lows[i1] and rsi_vals[i2] > rsi_vals[i1]:
             divergence_points.append((int(i1), int(i2)))
 
@@ -125,66 +116,58 @@ def apply_divergence_engine(df):
     df['SwingLow'] = swing_mask
 
     div_pairs = detect_rsi_bullish_divergence(df, swing_mask)
-
     df = generate_divergence_markers(df, div_pairs)
 
     return df, div_pairs
 
 # ============================
-# 9. BACKTEST ENGINE
+# 9. CLEAN BACKTEST ENGINE (FINAL)
 # ============================
 def run_backtest(df, divergence_pairs, risk_per_trade=2000):
     df = df.copy()
     df = df[~df.index.duplicated(keep='first')]
     df = df.sort_index()
-    df = df.reset_index().rename(columns={"index": "Timestamp"})
 
     trades = []
     equity = 0
 
-    # Use Div_Arrow as entry signal (ignore divergence_pairs to avoid type issues)
-    for i in range(len(df)):
-        if pd.isna(df.at[i, "Div_Arrow"]):
+    for (_, i2) in divergence_pairs:
+        entry_index = i2 + 1
+        if entry_index >= len(df):
             continue
 
-        close_i = float(df.at[i, "Close"])
-        ema_i = float(df.at[i, "EMA200"])
-        avwap_i = float(df.at[i, "AVWAP"])
-        atr_i = float(df.at[i, "ATR"])
+        open_next = df['Open'].iloc[entry_index]
+        ema_val = df['EMA200'].iloc[entry_index]
+        avwap_val = df['AVWAP'].iloc[entry_index]
+        atr_val = df['ATR'].iloc[entry_index]
 
-        if (
-            np.isnan(close_i)
-            or np.isnan(ema_i)
-            or np.isnan(avwap_i)
-            or np.isnan(atr_i)
-        ):
+        if pd.isna(open_next) or pd.isna(ema_val) or pd.isna(avwap_val) or pd.isna(atr_val):
             continue
 
-        if close_i < ema_i:
+        if open_next < ema_val:
+            continue
+        if open_next < avwap_val:
+            continue
+        if atr_val <= 0:
             continue
 
-        if close_i < avwap_i:
+        sl_distance = 1.5 * atr_val
+        sl_price = open_next - sl_distance
+
+        if open_next < sl_price:
             continue
 
-        entry_price = close_i
-
-        if atr_i <= 0:
-            continue
-
-        sl_distance = 1.5 * atr_i
         qty = max(int(risk_per_trade / sl_distance), 1)
-
-        sl_price = entry_price - sl_distance
-        tp_price = entry_price + (2 * atr_i)
+        tp_price = open_next + 2 * atr_val
 
         exit_price = None
         exit_index = None
 
-        for j in range(i + 1, len(df)):
-            low_j = float(df.at[j, "Low"])
-            high_j = float(df.at[j, "High"])
+        for j in range(entry_index + 1, len(df)):
+            low_j = df['Low'].iloc[j]
+            high_j = df['High'].iloc[j]
 
-            if np.isnan(low_j) or np.isnan(high_j):
+            if pd.isna(low_j) or pd.isna(high_j):
                 continue
 
             if low_j <= sl_price:
@@ -198,16 +181,16 @@ def run_backtest(df, divergence_pairs, risk_per_trade=2000):
                 break
 
         if exit_price is None:
-            exit_price = float(df.at[len(df) - 1, "Close"])
+            exit_price = df['Close'].iloc[-1]
             exit_index = len(df) - 1
 
-        pnl = (exit_price - entry_price) * qty
+        pnl = (exit_price - open_next) * qty
         equity += pnl
 
         trades.append({
-            "Entry": df.at[i, "Timestamp"],
-            "Exit": df.at[exit_index, "Timestamp"],
-            "EntryPrice": entry_price,
+            "Entry": df.index[entry_index],
+            "Exit": df.index[exit_index],
+            "EntryPrice": open_next,
             "ExitPrice": exit_price,
             "Qty": qty,
             "PnL": pnl,
@@ -216,6 +199,9 @@ def run_backtest(df, divergence_pairs, risk_per_trade=2000):
 
     return trades, equity
 
+# ============================
+# 10. TRADES → DF
+# ============================
 def trades_to_df(trades):
     if len(trades) == 0:
         return pd.DataFrame(columns=[
@@ -229,7 +215,7 @@ def build_equity_curve(trades_df):
     return trades_df["Equity"]
 
 # ============================
-# 10. STREAMLIT APP
+# 11. STREAMLIT APP
 # ============================
 @st.cache_data
 def load_data(ticker, start, end, interval):
