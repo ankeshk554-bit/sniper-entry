@@ -12,11 +12,12 @@ def ema(series, length):
 # ============================
 def rsi(series, length=14):
     delta = series.diff()
-    gain = np.where(delta > 0, delta, 0)
-    loss = np.where(delta < 0, -delta, 0)
 
-    gain_ema = pd.Series(gain).ewm(span=length, adjust=False).mean()
-    loss_ema = pd.Series(loss).ewm(span=length, adjust=False).mean()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    gain_ema = gain.ewm(span=length, adjust=False).mean()
+    loss_ema = loss.ewm(span=length, adjust=False).mean()
 
     rs = gain_ema / loss_ema
     return 100 - (100 / (1 + rs))
