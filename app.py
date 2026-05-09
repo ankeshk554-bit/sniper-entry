@@ -88,8 +88,18 @@ def compute_indicators(df):
 # ============================================================
 # DIVERGENCE ENGINE (CLASSIC + HIDDEN)
 # ============================================================
-def compute_divergences(df):
+def sanitize_df(df):
     df = df.copy()
+    numeric_cols = ["Open","High","Low","Close","Volume","EMA21","EMA200","RSI","MACD","MACD_SIGNAL","MACD_HIST"]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = df.dropna(subset=["Open","High","Low","Close"])
+    return df
+
+def compute_divergences(df):
+    df = sanitize_df(df)
+
     if df.empty or "RSI" not in df.columns:
         return [], [], [], []
 
@@ -99,12 +109,15 @@ def compute_divergences(df):
     hidden_bear = []
 
     for i in range(2, len(df)):
-        L0 = float(df["Low"].iloc[i])
-        L1 = float(df["Low"].iloc[i-1])
-        H0 = float(df["High"].iloc[i])
-        H1 = float(df["High"].iloc[i-1])
-        R0 = float(df["RSI"].iloc[i])
-        R1 = float(df["RSI"].iloc[i-1])
+        try:
+            L0 = float(df["Low"].iloc[i])
+            L1 = float(df["Low"].iloc[i-1])
+            H0 = float(df["High"].iloc[i])
+            H1 = float(df["High"].iloc[i-1])
+            R0 = float(df["RSI"].iloc[i])
+            R1 = float(df["RSI"].iloc[i-1])
+        except:
+            continue  # skip bad rows safely
 
         # Classic Bullish
         if L0 < L1 and R0 > R1:
@@ -123,6 +136,7 @@ def compute_divergences(df):
             hidden_bear.append((df.index[i], H0))
 
     return bull, bear, hidden_bull, hidden_bear
+
 
 
 # ============================================================
