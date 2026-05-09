@@ -254,7 +254,8 @@ def get_divergence_badge(ticker):
             return "—"
 
         df = compute_indicators(df)
-        bull, bear = compute_divergences(df)
+        bull, bear, hidden_bull, hidden_bear = compute_divergences(df)
+
 
         if bull:
             return "<span style='color:#4caf50;font-weight:700;'>BULL</span>"
