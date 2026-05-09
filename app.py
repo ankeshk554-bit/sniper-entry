@@ -118,7 +118,7 @@ def compute_strength(df, i1, i2):
 # ============================================================
 # SCREENER
 # ============================================================
-def scan_stock(ticker, interval, use_trend):
+def scan_stock(ticker, interval, use_trend, fresh_only):
     try:
         df = yf.download(ticker, period="1y", interval=interval, auto_adjust=True, progress=False)
         if df.empty:
@@ -139,7 +139,8 @@ def scan_stock(ticker, interval, use_trend):
 
         i1, i2 = divs[-1]
 
-        if i2 < len(df)-3:
+        # Fresh divergence filter
+        if fresh_only and i2 < len(df)-3:
             return None
 
         if use_trend and not bool(df["TrendW"].iloc[i2]):
@@ -204,7 +205,7 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
         name="Bullish Divergence"
     ))
 
-    # Volume (secondary y)
+    # Volume
     fig.add_trace(go.Bar(
         x=df.index, y=df["Volume"],
         marker_color="rgba(0,150,255,0.3)",
@@ -212,7 +213,7 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
         yaxis="y2"
     ))
 
-    # Weekly Trend Ribbon (bottom bar)
+    # Weekly Trend Ribbon
     if trend_series is not None:
         trend_series = trend_series.reindex(df.index, method="ffill")
         ribbon_color = ["green" if bool(v) else "gray" for v in trend_series]
@@ -325,8 +326,11 @@ def main():
 
         use_trend = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True, key="trend_filter_screener")
 
+        # ⭐ NEW TOGGLE
+        fresh_only = st.checkbox("Show Only Fresh Divergences (Last 3 Candles)", value=True, key="fresh_only_toggle")
+
         if universe == "Custom":
-            custom = st.text_input("Enter tickers", "HAL.NS, TCS.NS", key="custom_tickers")
+            custom = st.text_input("Enter tickers", "HAL.NS", key="custom_tickers")
             tickers = [x.strip() for x in custom.split(",") if x.strip()]
         else:
             tickers = NIFTY200
@@ -336,7 +340,7 @@ def main():
 
             results = []
             for t in tickers:
-                r = scan_stock(t, interval_s, use_trend)
+                r = scan_stock(t, interval_s, use_trend, fresh_only)
                 if r:
                     results.append(r)
 
@@ -387,29 +391,4 @@ def main():
         use_trend_bt = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True, key="trend_filter_bt")
 
         if st.button("Run Backtest", key="run_backtest_btn"):
-            end = date.today()
-            start = end - timedelta(days=365*years)
-
-            df = yf.download(ticker, start=start, end=end, interval=interval_b, auto_adjust=True, progress=False)
-            if df.empty:
-                st.error("No data.")
-                return
-
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-
-            df = df.apply(pd.to_numeric, errors="coerce")
-            df, divs = apply_divergence_engine(df)
-
-            trend_series = get_weekly_trend(ticker) if use_trend_bt else None
-
-            trades, eq = run_backtest(df, divs, risk, trend_series, use_trend_bt)
-            df_trades = pd.DataFrame(trades)
-
-            if df_trades.empty:
-                st.info("No trades generated.")
-            else:
-                st.dataframe(df_trades, use_container_width=True)
-
-if __name__ == "__main__":
-    main()
+           
