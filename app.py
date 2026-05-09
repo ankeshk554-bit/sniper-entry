@@ -192,16 +192,15 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
     ))
 
     if trend_series is not None:
-        trend_series = trend_series.reindex(df.index, method="ffill")
-        ribbon_color = ["green" if bool(v) else "gray" for v in trend_series]
+    trend_series = trend_series.reindex(df.index, method="ffill")
+    fig.add_trace(go.Scatter(
+        x=df.index,
+        y=df["Low"] * 0 + df["Low"].min(),  # flat baseline
+        mode="lines",
+        line=dict(color="green", width=2),
+        name="Weekly Trend (Up)"
+    ))
 
-        fig.add_trace(go.Bar(
-            x=df.index,
-            y=[df["Low"].min()*0.0 + 0.0001 for _ in df.index],
-            marker_color=ribbon_color,
-            name="Weekly Trend",
-            yaxis="y3"
-        ))
 
     fig.update_layout(
         height=900,
