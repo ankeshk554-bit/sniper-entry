@@ -83,8 +83,8 @@ def detect_strict_swing_lows(df):
 def detect_rsi_bullish_divergence(df, mask):
     divs = []
     idxs = np.where(mask)[0]
-    for i in range(1, len(idxs)):
-        i1, i2 = idxs[i-1], idxs[i]
+    for j in range(1, len(idxs)):
+        i1, i2 = idxs[j-1], idxs[j]
         if df['Low'].iloc[i2] < df['Low'].iloc[i1] and df['RSI'].iloc[i2] > df['RSI'].iloc[i1]:
             divs.append((i1, i2))
     return divs
@@ -111,7 +111,7 @@ def compute_strength(df, i1, i2):
     return round(score, 2)
 
 # ============================================================
-# SCREENER
+# SCREENER ENGINE
 # ============================================================
 def scan_stock(ticker, interval, use_trend, fresh_only):
     try:
@@ -149,28 +149,31 @@ def scan_stock(ticker, interval, use_trend, fresh_only):
         }
     except:
         return None
-
 # ============================================================
 # ULTRA-PRO PLOTLY CHART
 # ============================================================
 def plot_ultra_pro_chart(df, i1, i2, trend_series):
     fig = go.Figure()
+
     fig.add_trace(go.Candlestick(
         x=df.index,
         open=df["Open"], high=df["High"],
         low=df["Low"], close=df["Close"],
         name="Price"
     ))
+
     fig.add_trace(go.Scatter(
         x=df.index, y=df["EMA200"],
         mode="lines", line=dict(color="orange", width=1.5),
         name="EMA200"
     ))
+
     fig.add_trace(go.Scatter(
         x=df.index, y=df["AVWAP"],
         mode="lines", line=dict(color="purple", width=1.5),
         name="AVWAP"
     ))
+
     fig.add_trace(go.Scatter(
         x=[df.index[i1], df.index[i2]],
         y=[df["Low"].iloc[i1], df["Low"].iloc[i2]],
@@ -179,15 +182,18 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
         line=dict(color="lime", width=2),
         name="Bullish Divergence"
     ))
+
     fig.add_trace(go.Bar(
         x=df.index, y=df["Volume"],
         marker_color="rgba(0,150,255,0.3)",
         name="Volume",
         yaxis="y2"
     ))
+
     if trend_series is not None:
         trend_series = trend_series.reindex(df.index, method="ffill")
         ribbon_color = ["green" if bool(v) else "gray" for v in trend_series]
+
         fig.add_trace(go.Bar(
             x=df.index,
             y=[df["Low"].min()*0.0 + 0.0001 for _ in df.index],
@@ -195,16 +201,29 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
             name="Weekly Trend",
             yaxis="y3"
         ))
+
     fig.update_layout(
         height=900,
         xaxis=dict(domain=[0, 1]),
         yaxis=dict(title="Price", side="right"),
-        yaxis2=dict(title="Volume", overlaying="y", side="left", showgrid=False, rangemode="tozero"),
-        yaxis3=dict(overlaying="y", side="right", showticklabels=False),
+        yaxis2=dict(
+            title="Volume",
+            overlaying="y",
+            side="left",
+            showgrid=False,
+            rangemode="tozero"
+        ),
+        yaxis3=dict(
+            overlaying="y",
+            side="right",
+            showticklabels=False
+        ),
         showlegend=True,
         margin=dict(l=10, r=10, t=40, b=10)
     )
+
     return fig
+
 
 # ============================================================
 # BACKTEST ENGINE
@@ -213,41 +232,62 @@ def run_backtest(df, divs, risk, trend_series, use_trend):
     df = df.copy()
     df.index.name = "Timestamp"
     df = df.reset_index().reset_index(drop=True)
+
     if use_trend and trend_series is not None:
         df["TrendW"] = trend_series.reindex(df["Timestamp"], method="ffill")
     elif use_trend:
         return [], 0
-    trades, equity = [], 0
+
+    trades = []
+    equity = 0
+
     for (_, i2) in divs:
         if use_trend and not bool(df["TrendW"].iloc[i2]):
             continue
+
         entry_idx = i2 + 1
         if entry_idx >= len(df):
             continue
+
         open_n = float(df["Open"].iloc[entry_idx])
         ema_v = float(df["EMA200"].iloc[entry_idx])
         avwap_v = float(df["AVWAP"].iloc[entry_idx])
         atr_v = float(df["ATR"].iloc[entry_idx])
-        if atr_v <= 0 or open_n < ema_v or open_n < avwap_v:
+
+        if atr_v <= 0:
             continue
+        if open_n < ema_v or open_n < avwap_v:
+            continue
+
         sl = open_n - 1.5 * atr_v
         tp = open_n + 2 * atr_v
         risk_per_share = open_n - sl
+
         if risk_per_share <= 0:
             continue
+
         qty = max(int(risk / risk_per_share), 1)
-        exit_p, exit_idx = None, None
+
+        exit_p = None
+        exit_idx = None
+
         for j in range(entry_idx + 1, len(df)):
             if df["Low"].iloc[j] <= sl:
-                exit_p, exit_idx = sl, j
+                exit_p = sl
+                exit_idx = j
                 break
             if df["High"].iloc[j] >= tp:
-                exit_p, exit_idx = tp, j
+                exit_p = tp
+                exit_idx = j
                 break
+
         if exit_p is None:
-            exit_p, exit_idx = float(df["Close"].iloc[-1]), len(df) - 1
+            exit_p = float(df["Close"].iloc[-1])
+            exit_idx = len(df) - 1
+
         pnl = (exit_p - open_n) * qty
         equity += pnl
+
         trades.append({
             "Entry": df["Timestamp"].iloc[entry_idx],
             "Exit": df["Timestamp"].iloc[exit_idx],
@@ -257,13 +297,14 @@ def run_backtest(df, divs, risk, trend_series, use_trend):
             "PnL": round(pnl, 2),
             "Equity": round(equity, 2)
         })
-    return trades, equity
 
+    return trades, equity
 # ============================================================
 # STREAMLIT UI
 # ============================================================
 def main():
     st.set_page_config(page_title="Sniper Terminal – Ankesh", layout="wide")
+
     tab_screener, tab_backtest = st.tabs(["📊 Screener", "📈 Backtest"])
 
     # ============================================================
@@ -271,6 +312,7 @@ def main():
     # ============================================================
     with tab_screener:
         st.title("Sniper Divergence Screener – NIFTY200")
+
         col1, col2, col3 = st.columns(3)
         with col1:
             universe = st.selectbox("Universe", ["NIFTY200", "Custom"])
@@ -278,40 +320,59 @@ def main():
             interval_s = st.selectbox("Timeframe", ["1d", "1h", "15m"])
         with col3:
             mode = st.selectbox("View Mode", ["Simple", "Detailed"])
+
         use_trend = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True)
         fresh_only = st.checkbox("Show Only Fresh Divergences (Last 3 Candles)", value=True)
+
         if universe == "Custom":
             custom = st.text_input("Enter tickers", "HAL.NS")
             tickers = [x.strip() for x in custom.split(",") if x.strip()]
         else:
             tickers = NIFTY200
+
         if st.button("Run Screener"):
             st.info("Scanning…")
+
             results = []
             for t in tickers:
                 r = scan_stock(t, interval_s, use_trend, fresh_only)
                 if r:
                     results.append(r)
+
             if not results:
                 st.warning("No setups found.")
             else:
                 df_res = pd.DataFrame(results).sort_values("Strength", ascending=False)
+
                 if mode == "Simple":
                     st.dataframe(df_res[["Ticker", "SignalDate", "Strength"]], use_container_width=True)
                 else:
                     st.dataframe(df_res, use_container_width=True)
+
                 selected = st.selectbox("Select a ticker to view chart", df_res["Ticker"])
+
                 if selected:
                     row = df_res[df_res["Ticker"] == selected].iloc[0]
                     ticker = row["Ticker"]
                     i1, i2 = int(row["i1"]), int(row["i2"])
-                    df = yf.download(ticker, period="1y", interval=interval_s, auto_adjust=True, progress=False)
+
+                    df = yf.download(
+                        ticker,
+                        period="1y",
+                        interval=interval_s,
+                        auto_adjust=True,
+                        progress=False
+                    )
+
                     if isinstance(df.columns, pd.MultiIndex):
                         df.columns = df.columns.get_level_values(0)
+
                     df, _ = apply_divergence_engine(df)
+
                     trend_series = get_weekly_trend(ticker)
                     if trend_series is not None:
                         df["TrendW"] = trend_series.reindex(df.index, method="ffill")
+
                     with st.expander(f"📈 Full-Screen Chart – {ticker}", expanded=True):
                         fig = plot_ultra_pro_chart(df, i1, i2, df.get("TrendW"))
                         st.plotly_chart(fig, use_container_width=True)
@@ -320,21 +381,15 @@ def main():
     # BACKTEST TAB
     # ============================================================
     with tab_backtest:
-        with tab_backtest:
-    st.title("Sniper Backtester")
+        st.title("Sniper Backtester")
 
-    ticker = st.text_input("Ticker", "HAL.NS")
-    interval_b = st.selectbox("Timeframe", ["1d", "1h", "15m"])
-    risk = st.number_input("Risk per Trade (₹)", value=2000)
-    years = st.slider("Years of Data", 1, 5, 2)
-    use_trend_bt = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True)
+        ticker = st.text_input("Ticker", "HAL.NS")
+        interval_b = st.selectbox("Timeframe", ["1d", "1h", "15m"])
+        risk = st.number_input("Risk per Trade (₹)", value=2000)
+        years = st.slider("Years of Data", 1, 5, 2)
+        use_trend_bt = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True)
 
-    if st.button("Run Backtest"):
-        end = date.today()
-        start = end - timedelta(days=365 * years)
-        ...
-            end = date.today()
-                    if st.button("Run Backtest"):
+        if st.button("Run Backtest"):
             end = date.today()
             start = end - timedelta(days=365 * years)
 
@@ -371,9 +426,9 @@ def main():
                 st.metric("Total PnL", f"₹{round(eq, 2)}")
                 st.metric("Total Trades", len(df_trades))
 
+
 # ============================================================
 # MAIN ENTRY POINT
 # ============================================================
 if __name__ == "__main__":
     main()
-
