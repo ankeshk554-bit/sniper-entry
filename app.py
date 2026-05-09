@@ -52,7 +52,7 @@ def avwap(df):
     return (tp * df['Volume']).cumsum() / df['Volume'].cumsum()
 
 # ============================================================
-# WEEKLY TREND FILTER (EMA200 + RSI>50)
+# WEEKLY TREND FILTER
 # ============================================================
 def get_weekly_trend(ticker):
     df_w = yf.download(ticker, period="5y", interval="1wk", auto_adjust=True, progress=False)
@@ -63,7 +63,6 @@ def get_weekly_trend(ticker):
         df_w.columns = df_w.columns.get_level_values(0)
 
     df_w = df_w.apply(pd.to_numeric, errors="coerce")
-
     df_w["EMA200"] = ema(df_w["Close"], 200)
     df_w["RSI"] = rsi(df_w["Close"])
     df_w = df_w.dropna(subset=["EMA200", "RSI"])
@@ -388,4 +387,14 @@ def main():
             end = date.today()
             start = end - timedelta(days=365*years)
 
-            df = yf.download(ticker, start=start, end=end, interval=interval_b, auto_adjust=True, progress=False
+            df = yf.download(
+                ticker,
+                start=start,
+                end=end,
+                interval=interval_b,
+                auto_adjust=True,
+                progress=False
+            )
+
+            if df.empty:
+                st
