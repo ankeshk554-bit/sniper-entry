@@ -149,11 +149,52 @@ def compute_indicators(df):
 
 
 # ============================================================
-# SIMPLE DIVERGENCE ENGINE (PLACEHOLDER)
+# FULL DIVERGENCE ENGINE (CLASSIC + HIDDEN)
 # ============================================================
 def compute_divergences(df):
-    # Placeholder: returns empty lists
-    return [], []
+    df = df.copy()
+
+    # Ensure RSI exists
+    if "RSI" not in df.columns:
+        df["RSI"] = ta.momentum.rsi(df["Close"], window=14)
+
+    bull_divs = []
+    bear_divs = []
+    hidden_bull = []
+    hidden_bear = []
+
+    for i in range(2, len(df)):
+
+        # -----------------------------
+        # CLASSIC BULLISH DIVERGENCE
+        # Price LL + RSI HL
+        # -----------------------------
+        if df["Low"].iloc[i] < df["Low"].iloc[i-1] and df["RSI"].iloc[i] > df["RSI"].iloc[i-1]:
+            bull_divs.append((df.index[i], df["Low"].iloc[i]))
+
+        # -----------------------------
+        # CLASSIC BEARISH DIVERGENCE
+        # Price HH + RSI LH
+        # -----------------------------
+        if df["High"].iloc[i] > df["High"].iloc[i-1] and df["RSI"].iloc[i] < df["RSI"].iloc[i-1]:
+            bear_divs.append((df.index[i], df["High"].iloc[i]))
+
+        # -----------------------------
+        # HIDDEN BULLISH DIVERGENCE
+        # Price HL + RSI LL
+        # -----------------------------
+        if df["Low"].iloc[i] > df["Low"].iloc[i-1] and df["RSI"].iloc[i] < df["RSI"].iloc[i-1]:
+            hidden_bull.append((df.index[i], df["Low"].iloc[i]))
+
+        # -----------------------------
+        # HIDDEN BEARISH DIVERGENCE
+        # Price LH + RSI HH
+        # -----------------------------
+        if df["High"].iloc[i] < df["High"].iloc[i-1] and df["RSI"].iloc[i] > df["RSI"].iloc[i-1]:
+            hidden_bear.append((df.index[i], df["High"].iloc[i]))
+
+    return bull_divs, bear_divs, hidden_bull, hidden_bear
+
 
 
 # ============================================================
