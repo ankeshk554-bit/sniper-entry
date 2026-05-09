@@ -1,4 +1,4 @@
-]import numpy as np
+import numpy as np
 import pandas as pd
 import streamlit as st
 import yfinance as yf
@@ -90,8 +90,8 @@ def apply_divergence_engine(df):
 def run_backtest(df, divergence_pairs, risk_per_trade=2000):
     df = df.copy()
     df.index.name = "Timestamp"
-    df = df.reset_index()          # Timestamp becomes a column
-    df = df.reset_index(drop=True) # Clean integer index
+    df = df.reset_index()
+    df = df.reset_index(drop=True)
 
     trades, equity = [], 0
 
