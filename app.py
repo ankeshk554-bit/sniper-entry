@@ -88,6 +88,15 @@ def compute_indicators(df):
 # ============================================================
 # DIVERGENCE ENGINE (CLASSIC + HIDDEN)
 # ============================================================
+def sanitize_df(df):
+    df = df.copy()
+    numeric_cols = ["Open","High","Low","Close","Volume",
+                    "EMA21","EMA200","RSI","MACD","MACD_SIGNAL","MACD_HIST"]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = df.dropna(subset=["Open","High","Low","Close"])
+    return df
 def compute_divergences(df):
     df = sanitize_df(df)
 
@@ -100,7 +109,6 @@ def compute_divergences(df):
     hidden_bear = []
 
     for i in range(2, len(df)):
-        # Extract values safely
         try:
             L0 = float(df["Low"].iloc[i])
             L1 = float(df["Low"].iloc[i-1])
@@ -108,34 +116,26 @@ def compute_divergences(df):
             H1 = float(df["High"].iloc[i-1])
             R0 = float(df["RSI"].iloc[i])
             R1 = float(df["RSI"].iloc[i-1])
-        except Exception:
-            continue  # skip corrupted rows
-
-        # Skip NaN or invalid values
-        if any([
-            np.isnan(L0), np.isnan(L1),
-            np.isnan(H0), np.isnan(H1),
-            np.isnan(R0), np.isnan(R1)
-        ]):
+        except:
             continue
 
-        # Classic Bullish
+        if any(np.isnan(x) for x in [L0,L1,H0,H1,R0,R1]):
+            continue
+
         if L0 < L1 and R0 > R1:
             bull.append((df.index[i], L0))
 
-        # Classic Bearish
         if H0 > H1 and R0 < R1:
             bear.append((df.index[i], H0))
 
-        # Hidden Bullish
         if L0 > L1 and R0 < R1:
             hidden_bull.append((df.index[i], L0))
 
-        # Hidden Bearish
         if H0 < H1 and R0 > R1:
             hidden_bear.append((df.index[i], H0))
 
     return bull, bear, hidden_bull, hidden_bear
+
 
 
 
