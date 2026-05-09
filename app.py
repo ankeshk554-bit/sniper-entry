@@ -70,7 +70,7 @@ def get_weekly_trend(ticker):
     return df_w["TrendW"]
 
 # ============================================================
-# STRICT SWING LOWS (Bullish)
+# DIVERGENCE ENGINE (BULLISH + BEARISH)
 # ============================================================
 def detect_strict_swing_lows(df):
     lows = df['Low'].values
@@ -80,10 +80,6 @@ def detect_strict_swing_lows(df):
             mask[i] = True
     return mask
 
-
-# ============================================================
-# STRICT SWING HIGHS (Bearish)
-# ============================================================
 def detect_strict_swing_highs(df):
     highs = df['High'].values
     mask = np.zeros(len(df), dtype=bool)
@@ -92,10 +88,6 @@ def detect_strict_swing_highs(df):
             mask[i] = True
     return mask
 
-
-# ============================================================
-# BULLISH DIVERGENCE (Price ↓, RSI ↑)
-# ============================================================
 def detect_rsi_bullish_divergence(df, mask):
     divs = []
     idxs = np.where(mask)[0]
@@ -105,10 +97,6 @@ def detect_rsi_bullish_divergence(df, mask):
             divs.append((i1, i2))
     return divs
 
-
-# ============================================================
-# BEARISH DIVERGENCE (Price ↑, RSI ↓)
-# ============================================================
 def detect_rsi_bearish_divergence(df, mask):
     divs = []
     idxs = np.where(mask)[0]
@@ -118,10 +106,6 @@ def detect_rsi_bearish_divergence(df, mask):
             divs.append((i1, i2))
     return divs
 
-
-# ============================================================
-# MASTER DIVERGENCE ENGINE (Returns BOTH)
-# ============================================================
 def apply_divergence_engine(df):
     df = df.copy()
     df["EMA200"] = ema(df["Close"], 200)
@@ -129,48 +113,16 @@ def apply_divergence_engine(df):
     df["ATR"] = atr(df)
     df["AVWAP"] = avwap(df)
 
-    # Bullish
     lows_mask = detect_strict_swing_lows(df)
     bull_divs = detect_rsi_bullish_divergence(df, lows_mask)
 
-    # Bearish
     highs_mask = detect_strict_swing_highs(df)
     bear_divs = detect_rsi_bearish_divergence(df, highs_mask)
 
     return df, bull_divs, bear_divs
 
 # ============================================================
-# DIVERGENCE ENGINE
-# ============================================================
-def detect_strict_swing_lows(df):
-    lows = df['Low'].values
-    mask = np.zeros(len(df), dtype=bool)
-    for i in range(2, len(df)-2):
-        if lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
-            mask[i] = True
-    return mask
-
-def detect_rsi_bullish_divergence(df, mask):
-    divs = []
-    idxs = np.where(mask)[0]
-    for j in range(1, len(idxs)):
-        i1, i2 = idxs[j-1], idxs[j]
-        if df['Low'].iloc[i2] < df['Low'].iloc[i1] and df['RSI'].iloc[i2] > df['RSI'].iloc[i1]:
-            divs.append((i1, i2))
-    return divs
-
-def apply_divergence_engine(df):
-    df = df.copy()
-    df["EMA200"] = ema(df["Close"], 200)
-    df["RSI"] = rsi(df["Close"])
-    df["ATR"] = atr(df)
-    df["AVWAP"] = avwap(df)
-    mask = detect_strict_swing_lows(df)
-    divs = detect_rsi_bullish_divergence(df, mask)
-    return df, divs
-
-# ============================================================
-# STRENGTH SCORE
+# STRENGTH SCORE (uses last bullish divergence)
 # ============================================================
 def compute_strength(df, i1, i2):
     rsi_slope = df['RSI'].iloc[i2] - df['RSI'].iloc[i1]
@@ -190,25 +142,31 @@ def scan_stock(ticker, interval, use_trend, fresh_only):
             return None
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
-        df, divs = apply_divergence_engine(df)
-        if not divs:
+
+        df, bull_divs, bear_divs = apply_divergence_engine(df)
+        if not bull_divs:
             return None
+
         if use_trend:
             tw = get_weekly_trend(ticker)
             if tw is None:
                 return None
             df["TrendW"] = tw.reindex(df.index, method="ffill")
-        i1, i2 = divs[-1]
+
+        i1, i2 = bull_divs[-1]
+
         if fresh_only and i2 < len(df)-3:
             return None
         if use_trend and not bool(df["TrendW"].iloc[i2]):
             return None
+
         next_idx = i2 + 1
         open_n = df['Open'].iloc[next_idx] if next_idx < len(df) else df['Close'].iloc[-1]
         if open_n < df['EMA200'].iloc[i2] or open_n < df['AVWAP'].iloc[i2]:
             return None
         if df['ATR'].iloc[i2] <= 0:
             return None
+
         strength = compute_strength(df, i1, i2)
         return {
             "Ticker": ticker,
@@ -226,42 +184,20 @@ def scan_stock(ticker, interval, use_trend, fresh_only):
 def anchored_vwap(df, anchor_index):
     tp = (df["High"] + df["Low"] + df["Close"]) / 3
     vol = df["Volume"]
-
     cum_vol = vol.iloc[anchor_index:].cumsum()
     cum_tp_vol = (tp * vol).iloc[anchor_index:].cumsum()
-
     vwap = cum_tp_vol / cum_vol
-
     full = pd.Series(index=df.index, dtype=float)
     full.iloc[anchor_index:] = vwap
     return full
 
 # ============================================================
-# ANCHORED VWAP FUNCTION
+# ULTRA-PRO PLOTLY CHART (RSI SEPARATE PANEL, BULL+BEAR)
 # ============================================================
-def anchored_vwap(df, anchor_index):
-    tp = (df["High"] + df["Low"] + df["Close"]) / 3
-    vol = df["Volume"]
-
-    cum_vol = vol.iloc[anchor_index:].cumsum()
-    cum_tp_vol = (tp * vol).iloc[anchor_index:].cumsum()
-
-    vwap = cum_tp_vol / cum_vol
-
-    full = pd.Series(index=df.index, dtype=float)
-    full.iloc[anchor_index:] = vwap
-    return full
-
-
-# ============================================================
-# ULTRA-PRO PLOTLY CHART (RSI SEPARATE PANEL)
-# ============================================================
-def plot_ultra_pro_chart(df, i1, i2, trend_series):
+def plot_ultra_pro_chart(df, bull_divs, bear_divs):
     fig = go.Figure()
 
-    # -------------------------
     # MAIN PRICE CHART
-    # -------------------------
     fig.add_trace(go.Candlestick(
         x=df.index,
         open=df["Open"], high=df["High"],
@@ -291,7 +227,6 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
     # VWAP FROM TOP
     top_idx = df["High"].idxmax()
     df["VWAP_TOP"] = anchored_vwap(df, df.index.get_loc(top_idx))
-
     fig.add_trace(go.Scatter(
         x=df.index,
         y=df["VWAP_TOP"],
@@ -304,7 +239,6 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
     # VWAP FROM BOTTOM
     bottom_idx = df["Low"].idxmin()
     df["VWAP_BOTTOM"] = anchored_vwap(df, df.index.get_loc(bottom_idx))
-
     fig.add_trace(go.Scatter(
         x=df.index,
         y=df["VWAP_BOTTOM"],
@@ -314,20 +248,31 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
         yaxis="y1"
     ))
 
-    # Bullish Divergence
-    fig.add_trace(go.Scatter(
-        x=[df.index[i1], df.index[i2]],
-        y=[df["Low"].iloc[i1], df["Low"].iloc[i2]],
-        mode="markers+lines",
-        marker=dict(color="lime", size=12),
-        line=dict(color="lime", width=2),
-        name="Bullish Divergence",
-        yaxis="y1"
-    ))
+    # BULLISH DIVERGENCE (PRICE)
+    for (i1, i2) in bull_divs:
+        fig.add_trace(go.Scatter(
+            x=[df.index[i1], df.index[i2]],
+            y=[df["Low"].iloc[i1], df["Low"].iloc[i2]],
+            mode="markers+lines",
+            marker=dict(color="lime", size=10),
+            line=dict(color="lime", width=2),
+            name="Bullish Divergence",
+            yaxis="y1"
+        ))
 
-    # -------------------------
-    # VOLUME (BOTTOM OF PRICE PANEL)
-    # -------------------------
+    # BEARISH DIVERGENCE (PRICE)
+    for (i1_b, i2_b) in bear_divs:
+        fig.add_trace(go.Scatter(
+            x=[df.index[i1_b], df.index[i2_b]],
+            y=[df["High"].iloc[i1_b], df["High"].iloc[i2_b]],
+            mode="markers+lines",
+            marker=dict(color="red", size=10),
+            line=dict(color="red", width=2),
+            name="Bearish Divergence",
+            yaxis="y1"
+        ))
+
+    # VOLUME
     fig.add_trace(go.Bar(
         x=df.index,
         y=df["Volume"],
@@ -336,9 +281,7 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
         yaxis="y2"
     ))
 
-    # -------------------------
-    # RSI PANEL (SEPARATE)
-    # -------------------------
+    # RSI PANEL
     fig.add_trace(go.Scatter(
         x=df.index,
         y=df["RSI"],
@@ -348,16 +291,37 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
         yaxis="y3"
     ))
 
-    # -------------------------
-    # LAYOUT
-    # -------------------------
+    # BULLISH DIVERGENCE (RSI)
+    for (i1, i2) in bull_divs:
+        fig.add_trace(go.Scatter(
+            x=[df.index[i1], df.index[i2]],
+            y=[df["RSI"].iloc[i1], df["RSI"].iloc[i2]],
+            mode="markers+lines",
+            marker=dict(color="lime", size=8),
+            line=dict(color="lime", width=2),
+            name="Bullish Div (RSI)",
+            yaxis="y3"
+        ))
+
+    # BEARISH DIVERGENCE (RSI)
+    for (i1_b, i2_b) in bear_divs:
+        fig.add_trace(go.Scatter(
+            x=[df.index[i1_b], df.index[i2_b]],
+            y=[df["RSI"].iloc[i1_b], df["RSI"].iloc[i2_b]],
+            mode="markers+lines",
+            marker=dict(color="red", size=8),
+            line=dict(color="red", width=2),
+            name="Bearish Div (RSI)",
+            yaxis="y3"
+        ))
+
     fig.update_layout(
         height=950,
 
         # MAIN PRICE PANEL
         yaxis=dict(
             title="Price",
-            domain=[0.35, 1.0],   # top 65%
+            domain=[0.35, 1.0],
             side="right"
         ),
 
@@ -371,7 +335,7 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
             rangemode="tozero"
         ),
 
-        # RSI PANEL (bottom 35%)
+        # RSI PANEL
         yaxis3=dict(
             title="RSI",
             domain=[0, 0.30],
@@ -379,17 +343,21 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
             showgrid=True
         ),
 
-        xaxis=dict(domain=[0, 1]),
+        xaxis=dict(
+            domain=[0, 1],
+            rangeslider=dict(visible=False)
+        ),
+
         showlegend=True,
         margin=dict(l=10, r=10, t=40, b=10)
     )
-xaxis=dict(domain=[0, 1], rangeslider=dict(visible=False)),
 
     return fig
+
 # ============================================================
-# BACKTEST ENGINE
+# BACKTEST ENGINE (uses bullish divergences)
 # ============================================================
-def run_backtest(df, divs, risk, trend_series, use_trend):
+def run_backtest(df, bull_divs, risk, trend_series, use_trend):
     df = df.copy()
     df.index.name = "Timestamp"
     df = df.reset_index().reset_index(drop=True)
@@ -402,7 +370,7 @@ def run_backtest(df, divs, risk, trend_series, use_trend):
     trades = []
     equity = 0
 
-    for (_, i2) in divs:
+    for (_, i2) in bull_divs:
         if use_trend and not bool(df["TrendW"].iloc[i2]):
             continue
 
@@ -469,9 +437,7 @@ def main():
 
     tab_screener, tab_backtest = st.tabs(["📊 Screener", "📈 Backtest"])
 
-    # ============================================================
     # SCREENER TAB
-    # ============================================================
     with tab_screener:
         st.title("Sniper Divergence Screener – NIFTY200")
 
@@ -532,7 +498,6 @@ def main():
                 if selected:
                     row = df_res[df_res["Ticker"] == selected].iloc[0]
                     ticker = row["Ticker"]
-                    i1, i2 = int(row["i1"]), int(row["i2"])
 
                     df = yf.download(
                         ticker,
@@ -545,19 +510,13 @@ def main():
                     if isinstance(df.columns, pd.MultiIndex):
                         df.columns = df.columns.get_level_values(0)
 
-                    df, _ = apply_divergence_engine(df)
-
-                    trend_series = get_weekly_trend(ticker)
-                    if trend_series is not None:
-                        df["TrendW"] = trend_series.reindex(df.index, method="ffill")
+                    df, bull_divs, bear_divs = apply_divergence_engine(df)
 
                     with st.expander(f"📈 Full-Screen Chart – {ticker}", expanded=True):
-                        fig = plot_ultra_pro_chart(df, i1, i2, df.get("TrendW"))
+                        fig = plot_ultra_pro_chart(df, bull_divs, bear_divs)
                         st.plotly_chart(fig, use_container_width=True)
 
-      # ============================================================
     # BACKTEST TAB
-    # ============================================================
     with tab_backtest:
         st.title("Sniper Backtester")
 
@@ -593,11 +552,11 @@ def main():
                 df.columns = df.columns.get_level_values(0)
 
             df = df.apply(pd.to_numeric, errors="coerce")
-            df, divs = apply_divergence_engine(df)
+            df, bull_divs, bear_divs = apply_divergence_engine(df)
 
             trend_series = get_weekly_trend(ticker) if use_trend_bt else None
 
-            trades, eq = run_backtest(df, divs, risk, trend_series, use_trend_bt)
+            trades, eq = run_backtest(df, bull_divs, risk, trend_series, use_trend_bt)
             df_trades = pd.DataFrame(trades)
 
             if df_trades.empty:
@@ -615,4 +574,3 @@ def main():
 # ============================================================
 if __name__ == "__main__":
     main()
-
