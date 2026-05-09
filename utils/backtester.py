@@ -2,12 +2,11 @@ import numpy as np
 import pandas as pd
 
 def run_backtest(df, divergence_pairs, risk_per_trade=2000):
-    # ⭐ FIX 1: remove duplicate timestamps
-    df = df[~df.index.duplicated(keep='first')].copy()
+    # FULL HARD RESET OF INDEX (fixes all Series comparison errors)
+    df = df.copy()
+    df = df[~df.index.duplicated(keep='first')]
     df = df.sort_index()
-
-    # ⭐ FIX 2: reset index to guarantee integer indexing works
-    df = df.reset_index(drop=False)
+    df = df.reset_index().rename(columns={"index": "Timestamp"})
 
     trades = []
     equity = 0
@@ -19,16 +18,14 @@ def run_backtest(df, divergence_pairs, risk_per_trade=2000):
         if i not in divergence_entries:
             continue
 
-        close_i = df['Close'].iloc[i]
-        ema_i = df['EMA200'].iloc[i]
-        avwap_i = df['AVWAP'].iloc[i]
-        atr_i = df['ATR'].iloc[i]
+        # Extract scalars safely
+        close_i = float(df.at[i, "Close"])
+        ema_i = float(df.at[i, "EMA200"])
+        avwap_i = float(df.at[i, "AVWAP"])
+        atr_i = float(df.at[i, "ATR"])
 
-        # ⭐ FIX 3: skip invalid rows
-        if (
-            pd.isna(close_i) or pd.isna(ema_i) or
-            pd.isna(avwap_i) or pd.isna(atr_i)
-        ):
+        # Skip invalid rows
+        if np.isnan(close_i) or np.isnan(ema_i) or np.isnan(avwap_i) or np.isnan(atr_i):
             continue
 
         # Trend filter
@@ -41,7 +38,7 @@ def run_backtest(df, divergence_pairs, risk_per_trade=2000):
 
         entry_price = close_i
 
-        if atr_i == 0:
+        if atr_i <= 0:
             continue
 
         sl_distance = 1.5 * atr_i
@@ -53,12 +50,12 @@ def run_backtest(df, divergence_pairs, risk_per_trade=2000):
         exit_price = None
         exit_index = None
 
-        # ⭐ FIX 4: safe forward simulation
+        # Forward simulation
         for j in range(i + 1, len(df)):
-            low_j = df['Low'].iloc[j]
-            high_j = df['High'].iloc[j]
+            low_j = float(df.at[j, "Low"])
+            high_j = float(df.at[j, "High"])
 
-            if pd.isna(low_j) or pd.isna(high_j):
+            if np.isnan(low_j) or np.isnan(high_j):
                 continue
 
             if low_j <= sl_price:
@@ -71,17 +68,17 @@ def run_backtest(df, divergence_pairs, risk_per_trade=2000):
                 exit_index = j
                 break
 
-        # If no exit found
+        # No exit found → exit at last close
         if exit_price is None:
-            exit_price = df['Close'].iloc[-1]
+            exit_price = float(df.at[len(df) - 1, "Close"])
             exit_index = len(df) - 1
 
         pnl = (exit_price - entry_price) * qty
         equity += pnl
 
         trades.append({
-            "Entry": df['index'].iloc[i],   # original timestamp
-            "Exit": df['index'].iloc[exit_index],
+            "Entry": df.at[i, "Timestamp"],
+            "Exit": df.at[exit_index, "Timestamp"],
             "EntryPrice": entry_price,
             "ExitPrice": exit_price,
             "Qty": qty,
