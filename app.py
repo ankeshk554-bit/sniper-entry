@@ -1,12 +1,11 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import datetime
 import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-
 import warnings
+
 warnings.filterwarnings("ignore")
 
 # Optional libs
@@ -14,6 +13,15 @@ try:
     import ta
 except:
     ta = None
+
+# ============================================================
+# UNIVERSE (NIFTY200 PLACEHOLDER)
+# ============================================================
+# Replace this with your full NIFTY200 list if you want
+NIFTY200 = [
+    "INFY.NS", "TCS.NS", "RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS",
+    "SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS", "LT.NS", "ITC.NS"
+]
 
 # ============================================================
 # GLOBAL SETTINGS
@@ -45,7 +53,7 @@ def load_data(ticker, interval="1d", years=2):
             progress=False
         )
         return df
-    except:
+    except Exception:
         return pd.DataFrame()
 
 # ============================================================
@@ -82,7 +90,7 @@ def compute_indicators(df):
 # ============================================================
 def compute_divergences(df):
     df = df.copy()
-    if df.empty:
+    if df.empty or "RSI" not in df.columns:
         return [], [], [], []
 
     bull = []
@@ -116,7 +124,7 @@ def detect_pullback_setups(df):
     df = df.copy()
     setups = []
 
-    if df.empty or "Volume" not in df.columns:
+    if df.empty or "Volume" not in df.columns or "EMA21" not in df.columns or "RSI" not in df.columns:
         return setups
 
     for i in range(21, len(df)):
@@ -174,6 +182,7 @@ def compute_avwap(df, anchor_index):
     full = pd.Series([np.nan] * len(df), index=df.index)
     full.loc[anchor_index:] = avwap
     return full
+
 # ============================================================
 # CHART ENGINE (PRICE + VOLUME + RSI + MACD)
 # ============================================================
@@ -187,7 +196,6 @@ def plot_ultra_chart(df, bull_divs, bear_divs, hidden_bull, hidden_bear, pullbac
     df["AVWAP_HIGH"] = compute_avwap(df, swing_high)
     df["AVWAP_LOW"] = compute_avwap(df, swing_low)
 
-    # --- Create 4-panel layout ---
     fig = make_subplots(
         rows=4, cols=1,
         shared_xaxes=True,
@@ -195,9 +203,7 @@ def plot_ultra_chart(df, bull_divs, bear_divs, hidden_bull, hidden_bear, pullbac
         row_heights=[0.55, 0.15, 0.15, 0.15]
     )
 
-    # ============================================================
-    # PANEL 1 — PRICE
-    # ============================================================
+    # PRICE
     fig.add_trace(go.Candlestick(
         x=df.index,
         open=df["Open"], high=df["High"],
@@ -218,21 +224,20 @@ def plot_ultra_chart(df, bull_divs, bear_divs, hidden_bull, hidden_bear, pullbac
         name="EMA200"
     ), row=1, col=1)
 
-    # AVWAP High (Red)
+    # AVWAP High/Low
     fig.add_trace(go.Scatter(
         x=df.index, y=df["AVWAP_HIGH"],
         mode="lines", line=dict(color="#ff1744", width=2),
         name="AVWAP High"
     ), row=1, col=1)
 
-    # AVWAP Low (Green)
     fig.add_trace(go.Scatter(
         x=df.index, y=df["AVWAP_LOW"],
         mode="lines", line=dict(color="#00e676", width=2),
         name="AVWAP Low"
     ), row=1, col=1)
 
-    # Divergence markers
+    # Divergences
     for dt, price in bull_divs:
         if dt in df.index:
             fig.add_trace(go.Scatter(
@@ -251,7 +256,7 @@ def plot_ultra_chart(df, bull_divs, bear_divs, hidden_bull, hidden_bear, pullbac
                 name="Bear Div"
             ), row=1, col=1)
 
-    # Pullback markers (Gold Star)
+    # Pullbacks
     for dt, price in pullbacks:
         if dt in df.index:
             fig.add_trace(go.Scatter(
@@ -261,9 +266,7 @@ def plot_ultra_chart(df, bull_divs, bear_divs, hidden_bull, hidden_bear, pullbac
                 name="Pullback"
             ), row=1, col=1)
 
-    # ============================================================
-    # PANEL 2 — VOLUME
-    # ============================================================
+    # VOLUME
     fig.add_trace(go.Bar(
         x=df.index,
         y=df["Volume"],
@@ -271,9 +274,7 @@ def plot_ultra_chart(df, bull_divs, bear_divs, hidden_bull, hidden_bear, pullbac
         name="Volume"
     ), row=2, col=1)
 
-    # ============================================================
-    # PANEL 3 — RSI
-    # ============================================================
+    # RSI
     fig.add_trace(go.Scatter(
         x=df.index, y=df["RSI"],
         mode="lines", line=dict(color="#D4AF37", width=2),
@@ -284,9 +285,7 @@ def plot_ultra_chart(df, bull_divs, bear_divs, hidden_bull, hidden_bear, pullbac
     fig.add_hline(y=30, line=dict(color="green", dash="dot"), row=3, col=1)
     fig.add_hline(y=50, line=dict(color="white", dash="dot"), row=3, col=1)
 
-    # ============================================================
-    # PANEL 4 — MACD
-    # ============================================================
+    # MACD
     fig.add_trace(go.Scatter(
         x=df.index, y=df["MACD"],
         mode="lines", line=dict(color="#00e5ff", width=2),
@@ -299,7 +298,6 @@ def plot_ultra_chart(df, bull_divs, bear_divs, hidden_bull, hidden_bear, pullbac
         name="Signal"
     ), row=4, col=1)
 
-    # MACD Histogram (Green/Red)
     fig.add_trace(go.Bar(
         x=df.index,
         y=df["MACD_HIST"],
@@ -307,9 +305,6 @@ def plot_ultra_chart(df, bull_divs, bear_divs, hidden_bull, hidden_bear, pullbac
         name="Histogram"
     ), row=4, col=1)
 
-    # ============================================================
-    # FINAL LAYOUT
-    # ============================================================
     fig.update_layout(
         xaxis_rangeslider_visible=False,
         paper_bgcolor="rgba(0,0,0,0)",
@@ -319,6 +314,7 @@ def plot_ultra_chart(df, bull_divs, bear_divs, hidden_bull, hidden_bear, pullbac
     )
 
     return fig
+
 # ============================================================
 # WEEKLY TREND FILTER (EMA200 + RSI > 50)
 # ============================================================
@@ -334,9 +330,8 @@ def passes_weekly_trend_filter(ticker):
             df_w["Close"].iloc[-1] > df_w["EMA200"].iloc[-1] and
             df_w["RSI"].iloc[-1] > 50
         )
-    except:
+    except Exception:
         return False
-
 
 # ============================================================
 # SCREENER ENGINE
@@ -351,18 +346,12 @@ def run_screener(tickers, interval_s, fresh_only=True, use_trend=True):
 
         df = compute_indicators(df)
 
-        # Trend filter
-        if use_trend:
-            if not passes_weekly_trend_filter(t):
-                continue
+        if use_trend and not passes_weekly_trend_filter(t):
+            continue
 
-        # Divergences
         bull, bear, hidden_bull, hidden_bear = compute_divergences(df)
-
-        # Pullback setups
         pullbacks = detect_pullback_setups(df)
 
-        # Fresh filter (last 3 candles)
         if fresh_only:
             last_idx = df.index[-3:]
             bull = [(d, p) for (d, p) in bull if d in last_idx]
@@ -371,44 +360,37 @@ def run_screener(tickers, interval_s, fresh_only=True, use_trend=True):
             hidden_bear = [(d, p) for (d, p) in hidden_bear if d in last_idx]
             pullbacks = [(d, p) for (d, p) in pullbacks if d in last_idx]
 
-        # Determine signal type
         signal_type = None
         signal_date = None
         strength = 0
         bias = "Neutral"
 
-        # Priority: Pullback > Bullish > Hidden Bull > Bearish > Hidden Bear
         if pullbacks:
             signal_type = "PULLBACK"
             signal_date = pullbacks[-1][0]
             strength = 120
             bias = "Bullish"
-
         elif bull:
             signal_type = "BULLISH"
             signal_date = bull[-1][0]
             strength = 100
             bias = "Bullish"
-
         elif hidden_bull:
             signal_type = "HIDDEN_BULL"
             signal_date = hidden_bull[-1][0]
             strength = 90
             bias = "Bullish"
-
         elif bear:
             signal_type = "BEARISH"
             signal_date = bear[-1][0]
             strength = 100
             bias = "Bearish"
-
         elif hidden_bear:
             signal_type = "HIDDEN_BEAR"
             signal_date = hidden_bear[-1][0]
             strength = 90
             bias = "Bearish"
 
-        # Add to results
         if signal_type is not None:
             results.append({
                 "Ticker": t,
@@ -421,8 +403,9 @@ def run_screener(tickers, interval_s, fresh_only=True, use_trend=True):
     if results:
         return pd.DataFrame(results)
     return pd.DataFrame()
+
 # ============================================================
-# SPARKLINE GENERATOR (Mini Chart for Watchlist)
+# SPARKLINE GENERATOR
 # ============================================================
 def make_sparkline(df):
     if df.empty:
@@ -446,9 +429,8 @@ def make_sparkline(df):
     )
     return fig
 
-
 # ============================================================
-# WEEKLY TREND STATUS (Bullish / Bearish)
+# WEEKLY TREND STATUS
 # ============================================================
 def weekly_trend_status(ticker):
     df_w = load_data(ticker, interval="1wk", years=1)
@@ -462,12 +444,11 @@ def weekly_trend_status(ticker):
             return "Bullish"
         else:
             return "Bearish"
-    except:
+    except Exception:
         return "Unknown"
 
-
 # ============================================================
-# WATCHLIST PANEL (Sidebar)
+# WATCHLIST PANEL
 # ============================================================
 def render_watchlist_panel(watchlist):
     st.sidebar.subheader("📌 Watchlist")
@@ -490,8 +471,9 @@ def render_watchlist_panel(watchlist):
 
         if st.sidebar.button(f"Open {t} Chart", key=f"open_{t}"):
             st.session_state["chart_ticker"] = t
+
 # ============================================================
-# SETTINGS PANEL (Sidebar)
+# SETTINGS PANEL
 # ============================================================
 def render_settings_panel():
     st.sidebar.subheader("⚙️ Settings")
@@ -536,7 +518,6 @@ def render_settings_panel():
         "Show Divergences", value=True
     )
 
-
 # ============================================================
 # ATR CALCULATION
 # ============================================================
@@ -547,7 +528,6 @@ def compute_atr(df, period=14):
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     atr = tr.rolling(period).mean()
     return atr
-
 
 # ============================================================
 # AUTO‑TRADER (SIMULATED EXECUTION)
@@ -564,14 +544,16 @@ def auto_trader(df, signals, risk_per_trade=2000):
         close = df["Close"].iloc[i]
         atr = df["ATR"].iloc[i]
 
-        # ENTRY LOGIC
         if position is None:
             if date in signals:
                 entry_price = df["Open"].iloc[i+1] if i+1 < len(df) else close
                 sl = entry_price - 1.5 * atr
                 tp = entry_price + 2 * atr
 
-                qty = max(1, int(risk_per_trade / (entry_price - sl)))
+                if atr is None or np.isnan(atr) or atr == 0:
+                    continue
+
+                qty = max(1, int(risk_per_trade / max(entry_price - sl, 0.01)))
 
                 position = {
                     "entry_date": date,
@@ -580,13 +562,10 @@ def auto_trader(df, signals, risk_per_trade=2000):
                     "tp": tp,
                     "qty": qty
                 }
-
-        # EXIT LOGIC
         else:
             low = df["Low"].iloc[i]
             high = df["High"].iloc[i]
 
-            # Stop Loss hit
             if low <= position["sl"]:
                 exit_price = position["sl"]
                 pnl = (exit_price - position["entry_price"]) * position["qty"]
@@ -600,7 +579,6 @@ def auto_trader(df, signals, risk_per_trade=2000):
                 position = None
                 continue
 
-            # Take Profit hit
             if high >= position["tp"]:
                 exit_price = position["tp"]
                 pnl = (exit_price - position["entry_price"]) * position["qty"]
@@ -615,20 +593,19 @@ def auto_trader(df, signals, risk_per_trade=2000):
                 continue
 
     return pd.DataFrame(trades)
+
 # ============================================================
-# MAIN APP ASSEMBLY
+# MAIN APP
 # ============================================================
 def main():
     st.set_page_config(page_title="Sniper Divergence Terminal", layout="wide")
     st.title("Sniper Divergence Terminal – AVWAP + RSI + MACD")
 
-    # Init session vars
     if "watchlist" not in st.session_state:
         st.session_state["watchlist"] = []
     if "chart_ticker" not in st.session_state:
         st.session_state["chart_ticker"] = "INFY.NS"
 
-    # Sidebar: Settings + Watchlist
     render_settings_panel()
     render_watchlist_panel(st.session_state["watchlist"])
 
@@ -642,13 +619,15 @@ def main():
     if st.sidebar.button("Clear Watchlist"):
         st.session_state["watchlist"] = []
 
-    # Top controls
     col1, col2, col3 = st.columns(3)
     with col1:
         universe = st.selectbox("Universe", ["NIFTY200", "Custom"])
     with col2:
-        interval_s = st.selectbox("Timeframe", ["1d", "1h", "15m", "1wk"],
-                                  index=["1d", "1h", "15m", "1wk"].index(st.session_state["settings"]["default_tf"]))
+        interval_s = st.selectbox(
+            "Timeframe",
+            ["1d", "1h", "15m", "1wk"],
+            index=["1d", "1h", "15m", "1wk"].index(st.session_state["settings"]["default_tf"])
+        )
     with col3:
         fresh_only = st.checkbox("Fresh signals (last 3 candles)", value=True)
 
@@ -662,9 +641,7 @@ def main():
 
     tab1, tab2, tab3 = st.tabs(["📊 Screener", "📈 Chart", "🤖 Auto‑Trader"])
 
-    # --------------------------------------------------------
-    # TAB 1: SCREENER
-    # --------------------------------------------------------
+    # TAB 1: Screener
     with tab1:
         if st.button("Run Screener"):
             df_res = run_screener(tickers, interval_s, fresh_only=fresh_only, use_trend=use_trend)
@@ -680,7 +657,6 @@ def main():
             else:
                 st.info("Run the screener to see results.")
 
-        # Quick add from screener to watchlist
         df_res = st.session_state.get("last_screener", pd.DataFrame())
         if not df_res.empty:
             st.markdown("### Add from Screener to Watchlist")
@@ -698,9 +674,7 @@ def main():
                         if t not in st.session_state["watchlist"]:
                             st.session_state["watchlist"].append(t)
 
-    # --------------------------------------------------------
-    # TAB 2: CHART
-    # --------------------------------------------------------
+    # TAB 2: Chart
     with tab2:
         st.markdown("### Chart")
 
@@ -713,9 +687,11 @@ def main():
 
         st.session_state["chart_ticker"] = ticker.strip().upper()
 
-        df = load_data(st.session_state["chart_ticker"],
-                       interval=interval_s,
-                       years=st.session_state["settings"]["default_years"])
+        df = load_data(
+            st.session_state["chart_ticker"],
+            interval=interval_s,
+            years=st.session_state["settings"]["default_years"]
+        )
         if df.empty:
             st.error("No data for this ticker/timeframe.")
         else:
@@ -725,16 +701,16 @@ def main():
             fig = plot_ultra_chart(df, bull, bear, hidden_bull, hidden_bear, pullbacks)
             st.plotly_chart(fig, use_container_width=True)
 
-    # --------------------------------------------------------
-    # TAB 3: AUTO‑TRADER
-    # --------------------------------------------------------
+    # TAB 3: Auto‑Trader
     with tab3:
         st.markdown("### Auto‑Trader (Simulated)")
 
         ticker_auto = st.text_input("Ticker for Auto‑Trader", st.session_state["chart_ticker"], key="auto_ticker")
-        df_auto = load_data(ticker_auto,
-                            interval=interval_s,
-                            years=st.session_state["settings"]["default_years"])
+        df_auto = load_data(
+            ticker_auto,
+            interval=interval_s,
+            years=st.session_state["settings"]["default_years"]
+        )
         if df_auto.empty:
             st.error("No data for this ticker/timeframe.")
         else:
@@ -742,7 +718,6 @@ def main():
             bull_a, bear_a, hidden_bull_a, hidden_bear_a = compute_divergences(df_auto)
             pullbacks_a = detect_pullback_setups(df_auto)
 
-            # Use pullbacks + bullish divergences as entry signals
             signal_dates = set([d for d, _ in pullbacks_a] + [d for d, _ in bull_a])
 
             risk = st.session_state["settings"]["default_risk"]
@@ -772,166 +747,6 @@ def main():
                     st.plotly_chart(eq_fig, use_container_width=True)
 
 
-
-# ============================================================
-# MAIN APP ASSEMBLY (FIXED & CLEAN)
-# ============================================================
-def main():
-    st.set_page_config(page_title="Sniper Divergence Terminal", layout="wide")
-    st.title("Sniper Divergence Terminal – AVWAP + RSI + MACD")
-
-    # Init session vars
-    if "watchlist" not in st.session_state:
-        st.session_state["watchlist"] = []
-    if "chart_ticker" not in st.session_state:
-        st.session_state["chart_ticker"] = "INFY.NS"
-
-    # Sidebar: Settings + Watchlist
-    render_settings_panel()
-    render_watchlist_panel(st.session_state["watchlist"])
-
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("➕ Manage Watchlist")
-    new_ticker = st.sidebar.text_input("Add ticker (e.g. INFY.NS)")
-    if st.sidebar.button("Add to Watchlist"):
-        t = new_ticker.strip().upper()
-        if t and t not in st.session_state["watchlist"]:
-            st.session_state["watchlist"].append(t)
-    if st.sidebar.button("Clear Watchlist"):
-        st.session_state["watchlist"] = []
-
-    # Top controls
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        universe = st.selectbox("Universe", ["NIFTY200", "Custom"])
-    with col2:
-        interval_s = st.selectbox("Timeframe", ["1d", "1h", "15m", "1wk"],
-                                  index=["1d", "1h", "15m", "1wk"].index(st.session_state["settings"]["default_tf"]))
-    with col3:
-        fresh_only = st.checkbox("Fresh signals (last 3 candles)", value=True)
-
-    if universe == "Custom":
-        custom = st.text_input("Enter tickers (comma separated)", "INFY.NS, TCS.NS")
-        tickers = [x.strip().upper() for x in custom.split(",") if x.strip()]
-    else:
-        tickers = NIFTY200
-
-    use_trend = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True)
-
-    tab1, tab2, tab3 = st.tabs(["📊 Screener", "📈 Chart", "🤖 Auto‑Trader"])
-
-    # --------------------------------------------------------
-    # TAB 1: SCREENER
-    # --------------------------------------------------------
-    with tab1:
-        if st.button("Run Screener"):
-            df_res = run_screener(tickers, interval_s, fresh_only=fresh_only, use_trend=use_trend)
-            if df_res.empty:
-                st.warning("No setups found.")
-            else:
-                st.session_state["last_screener"] = df_res
-                st.dataframe(df_res, use_container_width=True)
-        else:
-            df_res = st.session_state.get("last_screener", pd.DataFrame())
-            if not df_res.empty:
-                st.dataframe(df_res, use_container_width=True)
-            else:
-                st.info("Run the screener to see results.")
-
-        # Quick add from screener to watchlist
-        df_res = st.session_state.get("last_screener", pd.DataFrame())
-        if not df_res.empty:
-            st.markdown("### Add from Screener to Watchlist")
-            for _, row in df_res.iterrows():
-                t = row["Ticker"]
-                c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
-                with c1:
-                    st.write(t)
-                with c2:
-                    st.write(row["SignalType"])
-                with c3:
-                    st.write(row["Bias"])
-                with c4:
-                    if st.button("➕", key=f"add_{t}"):
-                        if t not in st.session_state["watchlist"]:
-                            st.session_state["watchlist"].append(t)
-
-    # --------------------------------------------------------
-    # TAB 2: CHART
-    # --------------------------------------------------------
-    with tab2:
-        st.markdown("### Chart")
-
-        colc1, colc2 = st.columns([2, 1])
-        with colc1:
-            ticker = st.text_input("Ticker", st.session_state["chart_ticker"])
-        with colc2:
-            if st.button("Use from Watchlist Selected?"):
-                ticker = st.session_state["chart_ticker"]
-
-        st.session_state["chart_ticker"] = ticker.strip().upper()
-
-        df = load_data(st.session_state["chart_ticker"],
-                       interval=interval_s,
-                       years=st.session_state["settings"]["default_years"])
-        if df.empty:
-            st.error("No data for this ticker/timeframe.")
-        else:
-            df = compute_indicators(df)
-            bull, bear, hidden_bull, hidden_bear = compute_divergences(df)
-            pullbacks = detect_pullback_setups(df)
-            fig = plot_ultra_chart(df, bull, bear, hidden_bull, hidden_bear, pullbacks)
-            st.plotly_chart(fig, use_container_width=True)
-
-    # --------------------------------------------------------
-    # TAB 3: AUTO‑TRADER
-    # --------------------------------------------------------
-    with tab3:
-        st.markdown("### Auto‑Trader (Simulated)")
-
-        ticker_auto = st.text_input("Ticker for Auto‑Trader", st.session_state["chart_ticker"], key="auto_ticker")
-        df_auto = load_data(ticker_auto,
-                            interval=interval_s,
-                            years=st.session_state["settings"]["default_years"])
-        if df_auto.empty:
-            st.error("No data for this ticker/timeframe.")
-        else:
-            df_auto = compute_indicators(df_auto)
-            bull_a, bear_a, hidden_bull_a, hidden_bear_a = compute_divergences(df_auto)
-            pullbacks_a = detect_pullback_setups(df_auto)
-
-            # Use pullbacks + bullish divergences as entry signals
-            signal_dates = set([d for d, _ in pullbacks_a] + [d for d, _ in bull_a])
-
-            risk = st.session_state["settings"]["default_risk"]
-            st.write(f"Risk per trade: ₹{risk}")
-
-            if st.button("Run Auto‑Trader Backtest"):
-                trades = auto_trader(df_auto, signal_dates, risk_per_trade=risk)
-                if trades.empty:
-                    st.warning("No trades generated.")
-                else:
-                    trades["CumPnL"] = trades["PnL"].cumsum()
-                    st.dataframe(trades, use_container_width=True)
-
-                    eq_fig = go.Figure()
-                    eq_fig.add_trace(go.Scatter(
-                        x=trades["ExitDate"],
-                        y=trades["CumPnL"],
-                        mode="lines+markers",
-                        line=dict(color="#00e676", width=2),
-                        name="Equity Curve"
-                    ))
-                    eq_fig.update_layout(
-                        title="Equity Curve",
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        plot_bgcolor="rgba(0,0,0,0)"
-                    )
-                    st.plotly_chart(eq_fig, use_container_width=True)
-
-
-# ============================================================
 # ENTRY POINT
-# ============================================================
 if __name__ == "__main__":
     main()
