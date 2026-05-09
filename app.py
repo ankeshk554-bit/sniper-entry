@@ -141,7 +141,7 @@ def run_backtest(df, risk_per_trade=2000, use_mtf=True):
             (df['RSI'] < 32) &
             (df['Close'] > df['AVWAP_BOT']) &
             (df['Trend']) &
-            (df['TrendW'])     # Weekly trend
+            (df['TrendW'])
         )
     else:
         df['Entry'] = (
@@ -234,12 +234,25 @@ try:
         df['EMA50']  = ema(df['Close'], 50)
         df['RSI']    = rsi(df['Close'], 14)
 
-        # Weekly trend filter
+        # Weekly trend filter (safe alignment using merge_asof)
         df_w = yf.download(ticker, period="5y", interval="1wk", auto_adjust=True)
-        df_w['EMA200'] = ema(df_w['Close'], 200)
-        df_w['TrendW'] = df_w['Close'] > df_w['EMA200']
+        if not df_w.empty:
+            df_w['EMA200'] = ema(df_w['Close'], 200)
+            df_w['TrendW'] = df_w['Close'] > df_w['EMA200']
 
-        df['TrendW'] = df_w['TrendW'].reindex(df.index, method='ffill')
+            daily = df.reset_index().rename(columns={'index': 'Date'})
+            weekly = df_w.reset_index().rename(columns={'index': 'Date'})
+
+            mtf = pd.merge_asof(
+                daily[['Date']],
+                weekly[['Date', 'TrendW']].sort_values('Date'),
+                on='Date',
+                direction='backward'
+            )
+
+            df['TrendW'] = mtf['TrendW'].fillna(False).values
+        else:
+            df['TrendW'] = False
 
         # AVWAP
         t_idx = int(df['High'].argmax())
