@@ -772,6 +772,164 @@ def main():
                     st.plotly_chart(eq_fig, use_container_width=True)
 
 
+
+# ============================================================
+# MAIN APP ASSEMBLY (FIXED & CLEAN)
+# ============================================================
+def main():
+    st.set_page_config(page_title="Sniper Divergence Terminal", layout="wide")
+    st.title("Sniper Divergence Terminal – AVWAP + RSI + MACD")
+
+    # Init session vars
+    if "watchlist" not in st.session_state:
+        st.session_state["watchlist"] = []
+    if "chart_ticker" not in st.session_state:
+        st.session_state["chart_ticker"] = "INFY.NS"
+
+    # Sidebar: Settings + Watchlist
+    render_settings_panel()
+    render_watchlist_panel(st.session_state["watchlist"])
+
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("➕ Manage Watchlist")
+    new_ticker = st.sidebar.text_input("Add ticker (e.g. INFY.NS)")
+    if st.sidebar.button("Add to Watchlist"):
+        t = new_ticker.strip().upper()
+        if t and t not in st.session_state["watchlist"]:
+            st.session_state["watchlist"].append(t)
+    if st.sidebar.button("Clear Watchlist"):
+        st.session_state["watchlist"] = []
+
+    # Top controls
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        universe = st.selectbox("Universe", ["NIFTY200", "Custom"])
+    with col2:
+        interval_s = st.selectbox("Timeframe", ["1d", "1h", "15m", "1wk"],
+                                  index=["1d", "1h", "15m", "1wk"].index(st.session_state["settings"]["default_tf"]))
+    with col3:
+        fresh_only = st.checkbox("Fresh signals (last 3 candles)", value=True)
+
+    if universe == "Custom":
+        custom = st.text_input("Enter tickers (comma separated)", "INFY.NS, TCS.NS")
+        tickers = [x.strip().upper() for x in custom.split(",") if x.strip()]
+    else:
+        tickers = NIFTY200
+
+    use_trend = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True)
+
+    tab1, tab2, tab3 = st.tabs(["📊 Screener", "📈 Chart", "🤖 Auto‑Trader"])
+
+    # --------------------------------------------------------
+    # TAB 1: SCREENER
+    # --------------------------------------------------------
+    with tab1:
+        if st.button("Run Screener"):
+            df_res = run_screener(tickers, interval_s, fresh_only=fresh_only, use_trend=use_trend)
+            if df_res.empty:
+                st.warning("No setups found.")
+            else:
+                st.session_state["last_screener"] = df_res
+                st.dataframe(df_res, use_container_width=True)
+        else:
+            df_res = st.session_state.get("last_screener", pd.DataFrame())
+            if not df_res.empty:
+                st.dataframe(df_res, use_container_width=True)
+            else:
+                st.info("Run the screener to see results.")
+
+        # Quick add from screener to watchlist
+        df_res = st.session_state.get("last_screener", pd.DataFrame())
+        if not df_res.empty:
+            st.markdown("### Add from Screener to Watchlist")
+            for _, row in df_res.iterrows():
+                t = row["Ticker"]
+                c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
+                with c1:
+                    st.write(t)
+                with c2:
+                    st.write(row["SignalType"])
+                with c3:
+                    st.write(row["Bias"])
+                with c4:
+                    if st.button("➕", key=f"add_{t}"):
+                        if t not in st.session_state["watchlist"]:
+                            st.session_state["watchlist"].append(t)
+
+    # --------------------------------------------------------
+    # TAB 2: CHART
+    # --------------------------------------------------------
+    with tab2:
+        st.markdown("### Chart")
+
+        colc1, colc2 = st.columns([2, 1])
+        with colc1:
+            ticker = st.text_input("Ticker", st.session_state["chart_ticker"])
+        with colc2:
+            if st.button("Use from Watchlist Selected?"):
+                ticker = st.session_state["chart_ticker"]
+
+        st.session_state["chart_ticker"] = ticker.strip().upper()
+
+        df = load_data(st.session_state["chart_ticker"],
+                       interval=interval_s,
+                       years=st.session_state["settings"]["default_years"])
+        if df.empty:
+            st.error("No data for this ticker/timeframe.")
+        else:
+            df = compute_indicators(df)
+            bull, bear, hidden_bull, hidden_bear = compute_divergences(df)
+            pullbacks = detect_pullback_setups(df)
+            fig = plot_ultra_chart(df, bull, bear, hidden_bull, hidden_bear, pullbacks)
+            st.plotly_chart(fig, use_container_width=True)
+
+    # --------------------------------------------------------
+    # TAB 3: AUTO‑TRADER
+    # --------------------------------------------------------
+    with tab3:
+        st.markdown("### Auto‑Trader (Simulated)")
+
+        ticker_auto = st.text_input("Ticker for Auto‑Trader", st.session_state["chart_ticker"], key="auto_ticker")
+        df_auto = load_data(ticker_auto,
+                            interval=interval_s,
+                            years=st.session_state["settings"]["default_years"])
+        if df_auto.empty:
+            st.error("No data for this ticker/timeframe.")
+        else:
+            df_auto = compute_indicators(df_auto)
+            bull_a, bear_a, hidden_bull_a, hidden_bear_a = compute_divergences(df_auto)
+            pullbacks_a = detect_pullback_setups(df_auto)
+
+            # Use pullbacks + bullish divergences as entry signals
+            signal_dates = set([d for d, _ in pullbacks_a] + [d for d, _ in bull_a])
+
+            risk = st.session_state["settings"]["default_risk"]
+            st.write(f"Risk per trade: ₹{risk}")
+
+            if st.button("Run Auto‑Trader Backtest"):
+                trades = auto_trader(df_auto, signal_dates, risk_per_trade=risk)
+                if trades.empty:
+                    st.warning("No trades generated.")
+                else:
+                    trades["CumPnL"] = trades["PnL"].cumsum()
+                    st.dataframe(trades, use_container_width=True)
+
+                    eq_fig = go.Figure()
+                    eq_fig.add_trace(go.Scatter(
+                        x=trades["ExitDate"],
+                        y=trades["CumPnL"],
+                        mode="lines+markers",
+                        line=dict(color="#00e676", width=2),
+                        name="Equity Curve"
+                    ))
+                    eq_fig.update_layout(
+                        title="Equity Curve",
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="rgba(0,0,0,0)"
+                    )
+                    st.plotly_chart(eq_fig, use_container_width=True)
+
+
 # ============================================================
 # ENTRY POINT
 # ============================================================
