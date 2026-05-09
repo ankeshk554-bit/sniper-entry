@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from datetime import date, timedelta
 
 # ============================================================
-# NIFTY200 LIST (TRUNCATED FOR BREVITY — ADD FULL LIST IF NEEDED)
+# NIFTY200 LIST (TRUNCATED – ADD MORE IF YOU WANT)
 # ============================================================
 NIFTY200 = [
     "RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS","HINDUNILVR.NS","ITC.NS","LT.NS",
@@ -78,6 +78,7 @@ def detect_rsi_bullish_divergence(df, swing_low_mask):
     return divergence_points
 
 def apply_divergence_engine(df):
+    df = df.copy()
     df['EMA200'] = ema(df['Close'], 200)
     df['RSI'] = rsi(df['Close'])
     df['ATR'] = atr(df)
@@ -112,6 +113,9 @@ def scan_stock(ticker, interval):
         if df.empty:
             return None
 
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
         df, div_pairs = apply_divergence_engine(df)
         if not div_pairs:
             return None
@@ -123,7 +127,12 @@ def scan_stock(ticker, interval):
             return None
 
         # A++ filters
-        open_n = df['Open'].iloc[i2+1] if i2+1 < len(df) else df['Close'].iloc[-1]
+        next_idx = i2 + 1
+        if next_idx < len(df):
+            open_n = df['Open'].iloc[next_idx]
+        else:
+            open_n = df['Close'].iloc[-1]
+
         if open_n < df['EMA200'].iloc[i2] or open_n < df['AVWAP'].iloc[i2]:
             return None
         if df['ATR'].iloc[i2] <= 0:
@@ -141,7 +150,7 @@ def scan_stock(ticker, interval):
             "Strength": strength
         }
 
-    except:
+    except Exception:
         return None
 
 # ============================================================
@@ -228,13 +237,13 @@ def main():
         with col1:
             universe = st.selectbox("Universe", ["NIFTY200", "Custom"], key="universe_key")
         with col2:
-            interval = st.selectbox("Timeframe", ["1d", "1h", "15m"], key="screener_tf")
+            interval_s = st.selectbox("Timeframe", ["1d", "1h", "15m"], key="screener_tf")
         with col3:
             mode = st.selectbox("View Mode", ["Simple", "Detailed"], key="view_mode")
 
         if universe == "Custom":
             custom = st.text_input("Enter tickers (comma separated)", "HAL.NS, TCS.NS", key="custom_list")
-            tickers = [x.strip() for x in custom.split(",")]
+            tickers = [x.strip() for x in custom.split(",") if x.strip()]
         else:
             tickers = NIFTY200
 
@@ -243,7 +252,7 @@ def main():
 
             results = []
             for t in tickers:
-                r = scan_stock(t, interval)
+                r = scan_stock(t, interval_s)
                 if r:
                     results.append(r)
 
@@ -264,7 +273,7 @@ def main():
         st.title("Sniper Backtester")
 
         ticker = st.text_input("Ticker", value="HAL.NS", key="bt_ticker")
-        interval = st.selectbox("Timeframe", ["1d", "1h", "15m"], key="backtest_tf")
+        interval_b = st.selectbox("Timeframe", ["1d", "1h", "15m"], key="backtest_tf")
         risk_per_trade = st.number_input("Risk per Trade (₹)", value=2000, key="bt_risk")
         years = st.slider("Years of Data", 1, 5, 2, key="bt_years")
 
@@ -272,16 +281,34 @@ def main():
             end_date = date.today()
             start_date = end_date - timedelta(days=365 * years)
 
-            df = yf.download(ticker, start=start_date, end=end_date, interval=interval, auto_adjust=True)
+            df = yf.download(
+                ticker,
+                start=start_date,
+                end=end_date,
+                interval=interval_b,
+                auto_adjust=True,
+                progress=False
+            )
+
             if df.empty:
                 st.error("No data.")
                 return
+
+            # Flatten MultiIndex columns if present
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+
+            # Ensure numeric where possible
+            df = df.apply(pd.to_numeric, errors='ignore')
 
             df, div_pairs = apply_divergence_engine(df)
             trades, _ = run_backtest(df, div_pairs, risk_per_trade)
             trades_df = pd.DataFrame(trades)
 
-            st.dataframe(trades_df, use_container_width=True)
+            if trades_df.empty:
+                st.info("No trades generated with current settings.")
+            else:
+                st.dataframe(trades_df, use_container_width=True)
 
 if __name__ == "__main__":
     main()
