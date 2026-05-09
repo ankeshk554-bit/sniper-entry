@@ -51,6 +51,7 @@ import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import date, timedelta
+from typing import Optional
 import warnings
 warnings.filterwarnings(“ignore”)
 
@@ -547,7 +548,7 @@ return {"total": total, "grade": grade, "breakdown": scores}
 # ============================================================
 
 @st.cache_data(show_spinner=False)
-def get_weekly_trend(ticker: str) -> pd.Series | None:
+def get_weekly_trend(ticker: str) -> Optional[pd.Series]:
 df_w = load_data(ticker, “1wk”, years=5)
 if df_w.empty:
 return None
@@ -566,7 +567,7 @@ return df_w[“TrendW”]
 # ============================================================
 
 def scan_stock(ticker: str, interval: str, use_trend: bool,
-fresh_only: bool, swing_bars: int, min_quality: int) -> dict | None:
+fresh_only: bool, swing_bars: int, min_quality: int) -> Optional[dict]:
 try:
 df = load_data(ticker, interval)
 if df.empty or len(df) < 100:
@@ -844,7 +845,7 @@ fig = make_subplots(
     subplot_titles=[ticker, "Volume + OFI", "RSI (14) + Divergence", "MACD Histogram"],
 )
 
-# ── CANDLESTICK ──
+#  CANDLESTICK 
 fig.add_trace(go.Candlestick(
     x=df_p.index, open=df_p["Open"], high=df_p["High"],
     low=df_p["Low"], close=df_p["Close"],
@@ -853,7 +854,7 @@ fig.add_trace(go.Candlestick(
     increasing_fillcolor="#3fb950", decreasing_fillcolor="#f85149",
 ), row=1, col=1)
 
-# ── EMAs ──
+#  EMAs 
 for span, color, name in [(21,"#e3b341","EMA 21"),(50,"#58a6ff","EMA 50"),(200,"#ff9a3c","EMA 200")]:
     col_name = f"EMA{span}"
     if col_name in df_p.columns:
@@ -863,7 +864,7 @@ for span, color, name in [(21,"#e3b341","EMA 21"),(50,"#58a6ff","EMA 50"),(200,"
             name=name, opacity=0.8,
         ), row=1, col=1)
 
-# ── AVWAP + Bands ──
+#  AVWAP + Bands 
 if "AVWAP" in df_p.columns:
     fig.add_trace(go.Scatter(x=df_p.index, y=df_p["AVWAP"],
         line=dict(color="#a371f7", width=2, dash="dash"), name="AVWAP"), row=1, col=1)
@@ -873,7 +874,7 @@ for band, color in [("VWAP_U1","rgba(163,113,247,.3)"),("VWAP_L1","rgba(163,113,
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p[band],
             line=dict(color=color, width=1), name=band, showlegend=False), row=1, col=1)
 
-# ── Anchored VWAPs ──
+#  Anchored VWAPs 
 for col_n, color, nm in [("VWAP_TOP","#f85149","VWAP Top"),
                            ("VWAP_BOTTOM","#3fb950","VWAP Bot"),
                            ("VWAP_RECENT_TOP","rgba(248,81,73,.5)","VWAP Rec.Top"),
@@ -883,7 +884,7 @@ for col_n, color, nm in [("VWAP_TOP","#f85149","VWAP Top"),
             line=dict(color=color, width=1.2, dash="dot"),
             name=nm, opacity=0.7), row=1, col=1)
 
-# ── BB Squeeze markers on price ──
+#  BB Squeeze markers on price 
 if "Squeeze_Fire" in df_p.columns:
     sq_dates = df_p.index[df_p["Squeeze_Fire"]]
     sq_prices= df_p["Low"][df_p["Squeeze_Fire"]] * 0.99
@@ -892,7 +893,7 @@ if "Squeeze_Fire" in df_p.columns:
             mode="markers", marker=dict(symbol="star", color="#a371f7", size=14),
             name="Squeeze Fire"), row=1, col=1)
 
-# ── Bullish candle pattern markers ──
+#  Bullish candle pattern markers 
 if "BullishPattern" in df_p.columns:
     bp_dates = df_p.index[df_p["BullishPattern"]]
     bp_prices= df_p["Low"][df_p["BullishPattern"]] * 0.985
@@ -901,7 +902,7 @@ if "BullishPattern" in df_p.columns:
             mode="markers", marker=dict(symbol="triangle-up", color="#3fb950", size=10),
             name="Bull Pattern"), row=1, col=1)
 
-# ── Divergences on price ──
+#  Divergences on price 
 for divs, price_col, color, name in [
     (bull_divs, "Low",  "#3fb950", "Bull Div"),
     (bear_divs, "High", "#f85149", "Bear Div"),
@@ -916,7 +917,7 @@ for divs, price_col, color, name in [
             name=name,
         ), row=1, col=1)
 
-# ── VOLUME ──
+#  VOLUME 
 vol_colors = ["#3fb950" if c >= o else "#f85149"
               for c, o in zip(df_p["Close"], df_p["Open"])]
 fig.add_trace(go.Bar(x=df_p.index, y=df_p["Volume"],
@@ -930,7 +931,7 @@ if "OFI" in df_p.columns:
         marker_color=ofi_colors, opacity=0.5, name="OFI",
         yaxis="y5"), row=2, col=1)
 
-# ── RSI ──
+#  RSI 
 fig.add_trace(go.Scatter(x=df_p.index, y=df_p["RSI"],
     line=dict(color="#58a6ff", width=1.5), name="RSI"), row=3, col=1)
 for level, color in [(70,"rgba(248,81,73,.4)"), (30,"rgba(63,185,80,.4)"), (50,"rgba(139,148,158,.3)")]:
@@ -948,7 +949,7 @@ for divs, price_col, color in [(bull_divs, "Low", "#3fb950"), (bear_divs, "High"
             showlegend=False,
         ), row=3, col=1)
 
-# ── MACD ──
+#  MACD 
 macd_colors = ["#3fb950" if v >= 0 else "#f85149" for v in df_p["MACD_Hist"]]
 fig.add_trace(go.Bar(x=df_p.index, y=df_p["MACD_Hist"],
     marker_color=macd_colors, name="MACD Hist"), row=4, col=1)
@@ -957,7 +958,7 @@ fig.add_trace(go.Scatter(x=df_p.index, y=df_p["MACD"],
 fig.add_trace(go.Scatter(x=df_p.index, y=df_p["MACD_Signal"],
     line=dict(color="#f0883e", width=1), name="Signal"), row=4, col=1)
 
-# ── LAYOUT ──
+#  LAYOUT 
 fig.update_layout(
     height=900,
     template="plotly_dark",
@@ -1034,24 +1035,24 @@ st.markdown(”””
 border-radius:10px;padding:16px 24px;margin-bottom:20px;display:flex;align-items:center;gap:16px'>
 <div style='width:40px;height:40px;background:linear-gradient(135deg,#2ea043,#1a7f37);
 border-radius:10px;display:flex;align-items:center;justify-content:center;
-font-size:20px;color:white'>◈</div>
+font-size:20px;color:white'>S</div>
 <div>
 <div style='font-family:Syne,sans-serif;font-size:22px;font-weight:800;
 color:#f0f6fc;letter-spacing:-0.5px'>SNIPER TERMINAL v2</div>
 <div style='font-size:10px;color:#8b949e;letter-spacing:2px;font-family:JetBrains Mono'>
-RSI+MACD DUAL DIVERGENCE · BB SQUEEZE · ORDER FLOW · VWAP BANDS · WALK-FORWARD BACKTEST</div>
+RSI+MACD DUAL DIVERGENCE * BB SQUEEZE * ORDER FLOW * VWAP BANDS * WALK-FORWARD BACKTEST</div>
 </div>
 </div>
 “””, unsafe_allow_html=True)
 
 ```
 tab_screen, tab_back, tab_guide = st.tabs(
-    ["📡 Screener", "📈 Backtest", "📋 What's New & Guide"]
+    ["Screener", "Backtest", "Guide"]
 )
 
-# ══════════════════════════════════════════════════════
+# 
 # SCREENER TAB
-# ══════════════════════════════════════════════════════
+# 
 with tab_screen:
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -1079,7 +1080,7 @@ with tab_screen:
     else:
         tickers = NIFTY200
 
-    if st.button("▶  Run Screener", key="run_screen"):
+    if st.button(">  Run Screener", key="run_screen"):
         results = []
         prog = st.progress(0, text="Scanning market...")
         for idx, t in enumerate(tickers):
@@ -1123,7 +1124,7 @@ with tab_screen:
                 .applymap(color_grade, subset=["Grade"]) \
                 .applymap(color_rr,   subset=["R:R"]) \
                 .applymap(color_sq,   subset=["Squeeze_Fire","Bull_Pattern"]) \
-                .format({"Entry":"₹{:.2f}","SL":"₹{:.2f}","TP1":"₹{:.2f}","TP2":"₹{:.2f}",
+                .format({"Entry":"INR {:.2f}","SL":"INR {:.2f}","TP1":"INR {:.2f}","TP2":"INR {:.2f}",
                          "Quality":"{:.0f}","R:R":"{:.2f}x","RSI":"{:.1f}","OFI":"{:.3f}"})
             return styled
 
@@ -1145,13 +1146,13 @@ with tab_screen:
                         cols[idx2 % 5].metric(factor.replace("_"," "), f"{score}/10")
 
                 bull_divs, bear_divs = compute_divergences(df_full, swing_bars=swing_bars)
-                with st.expander(f"Full Chart — {sel_ticker}", expanded=True):
+                with st.expander(f"Full Chart -- {sel_ticker}", expanded=True):
                     st.plotly_chart(plot_chart(df_full, bull_divs, bear_divs, sel_ticker),
                                     use_container_width=True)
 
-# ══════════════════════════════════════════════════════
+# 
 # BACKTEST TAB
-# ══════════════════════════════════════════════════════
+# 
 with tab_back:
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -1171,7 +1172,7 @@ with tab_back:
     with c7:
         bt_swing = st.slider("Swing Lookback", 3, 10, 5, key="bt_swing")
 
-    if st.button("▶  Run Backtest", key="run_bt"):
+    if st.button(">  Run Backtest", key="run_bt"):
         df_bt = load_data(bt_ticker, bt_tf, years=bt_years)
         if df_bt.empty:
             st.error("No data. Check ticker or timeframe.")
@@ -1201,7 +1202,7 @@ with tab_back:
                 r2 = st.columns(4)
                 r2[0].metric("Profit Factor",  stats["Profit_Factor"])
                 r2[1].metric("Max Drawdown",  f"-{stats['Max_DD_Pct']}%")
-                r2[2].metric("Total PnL",     f"₹{stats['Total_PnL']:,.0f}")
+                r2[2].metric("Total PnL",     f"INR {stats['Total_PnL']:,.0f}")
                 r2[3].metric("Trades",         stats["Total_Trades"])
 
                 r3 = st.columns(4)
@@ -1220,13 +1221,13 @@ with tab_back:
                     def color_pnl(v):
                         return "color:#3fb950;font-weight:700" if v > 0 else "color:#f85149;font-weight:700"
                     styled_trades = df_trades.style.applymap(color_pnl, subset=["PnL","Return_Pct"]) \
-                        .format({"Entry_Price":"₹{:.2f}","Exit_Price":"₹{:.2f}",
-                                 "PnL":"₹{:.2f}","Return_Pct":"{:.2f}%"})
+                        .format({"Entry_Price":"INR {:.2f}","Exit_Price":"INR {:.2f}",
+                                 "PnL":"INR {:.2f}","Return_Pct":"{:.2f}%"})
                     st.dataframe(styled_trades, use_container_width=True)
 
-# ══════════════════════════════════════════════════════
+# 
 # GUIDE TAB
-# ══════════════════════════════════════════════════════
+# 
 with tab_guide:
     st.markdown("""
 ```
@@ -1238,18 +1239,18 @@ with tab_guide:
 |1 |**Data**           |MultiIndex flattened in 6 different places|Fixed ONCE in `load_data()`                                 |
 |2 |**Divergence**     |RSI-only divergence (50% false positives) |**RSI + MACD dual confirmation** (requires both)            |
 |3 |**Swing Detection**|2-bar lookback only (too noisy)           |**Configurable N-bar** (default 5, slider in UI)            |
-|4 |**Backtest**       |`close[i]` used as entry (lookahead bias!)|**Next bar’s OPEN** price — zero lookahead                  |
+|4 |**Backtest**       |`close[i]` used as entry (lookahead bias!)|**Next bar’s OPEN** price – zero lookahead                  |
 |5 |**Exits**          |Only SL+TP, no trailing                   |**ATR trailing stop** + partial exit at TP1                 |
 |6 |**Stats**          |Only PnL shown                            |**Sharpe, Sortino, Calmar, Win%, Profit Factor, Kelly, RoR**|
 |7 |**BB Squeeze**     |Missing                                   |**Keltner-method squeeze detection + fire signal**          |
-|8 |**Order Flow**     |Missing                                   |**Body-direction OFI** — buy/sell pressure per bar          |
-|9 |**VWAP**           |Single AVWAP midline only                 |**VWAP ± 1SD, ± 2SD bands** + 4 anchored VWAPs              |
+|8 |**Order Flow**     |Missing                                   |**Body-direction OFI** – buy/sell pressure per bar          |
+|9 |**VWAP**           |Single AVWAP midline only                 |**VWAP +/- 1SD, +/- 2SD bands** + 4 anchored VWAPs          |
 |10|**Signal Scoring** |Strength score (arbitrary)                |**10-factor 0-100 quality score** with grade A+/A/B+/B/C    |
 |11|**Candles**        |Missing                                   |Hammer, Engulfing, Morning Star, Shooting Star              |
 |12|**Equity Curve**   |Missing                                   |Equity curve + drawdown % chart                             |
 |13|**Position Sizing**|Fixed qty                                 |**Kelly Criterion** + risk-per-trade                        |
 |14|**Volume**         |Basic only                                |**Vol/SMA20 ratio surge** + OFI integrated into chart       |
-|15|**EMA stack**      |EMA200 only                               |**EMA 9/21/50/200** — full stack alignment check            |
+|15|**EMA stack**      |EMA200 only                               |**EMA 9/21/50/200** – full stack alignment check            |
 
 -----
 
@@ -1257,8 +1258,8 @@ with tab_guide:
 
 The backtest Sharpe depends on your signal quality. Use these settings:
 
-- **Grade**: A+ only (Quality ≥ 85)
-- **Swing Bars**: 5–7 (reduces false divergences)
+- **Grade**: A+ only (Quality >= 85)
+- **Swing Bars**: 5-7 (reduces false divergences)
 - **Weekly Trend Filter**: ON (cuts 40% of losing trades)
 - **Fresh Signals**: ON (only last 4 bars)
 - **BB Squeeze Fire**: ON (highest momentum signals)
@@ -1268,7 +1269,7 @@ The backtest Sharpe depends on your signal quality. Use these settings:
 
 ## Signal Quality Score Breakdown
 
-Each factor scores 1–10 (max 100 total):
+Each factor scores 1-10 (max 100 total):
 
 |Factor        |What it checks                              |
 |--------------|--------------------------------------------|
