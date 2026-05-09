@@ -151,11 +151,31 @@ def scan_stock(ticker, interval, use_trend, fresh_only):
         return None
 
 # ============================================================
-# ULTRA-PRO PLOTLY CHART
+# ANCHORED VWAP FUNCTION
+# ============================================================
+def anchored_vwap(df, anchor_index):
+    tp = (df["High"] + df["Low"] + df["Close"]) / 3
+    vol = df["Volume"]
+
+    cum_vol = vol.iloc[anchor_index:].cumsum()
+    cum_tp_vol = (tp * vol).iloc[anchor_index:].cumsum()
+
+    vwap = cum_tp_vol / cum_vol
+
+    full = pd.Series(index=df.index, dtype=float)
+    full.iloc[anchor_index:] = vwap
+    return full
+
+
+# ============================================================
+# ULTRA-PRO PLOTLY CHART (FINAL VERSION)
 # ============================================================
 def plot_ultra_pro_chart(df, i1, i2, trend_series):
     fig = go.Figure()
 
+    # -------------------------
+    # CANDLESTICKS
+    # -------------------------
     fig.add_trace(go.Candlestick(
         x=df.index,
         open=df["Open"], high=df["High"],
@@ -163,18 +183,57 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
         name="Price"
     ))
 
+    # -------------------------
+    # EMA200
+    # -------------------------
     fig.add_trace(go.Scatter(
         x=df.index, y=df["EMA200"],
-        mode="lines", line=dict(color="orange", width=1.5),
+        mode="lines",
+        line=dict(color="orange", width=2),
         name="EMA200"
     ))
 
+    # -------------------------
+    # AVWAP
+    # -------------------------
     fig.add_trace(go.Scatter(
         x=df.index, y=df["AVWAP"],
-        mode="lines", line=dict(color="purple", width=1.5),
+        mode="lines",
+        line=dict(color="purple", width=2),
         name="AVWAP"
     ))
 
+    # -------------------------
+    # VWAP FROM MAJOR TOP
+    # -------------------------
+    top_idx = df["High"].idxmax()
+    df["VWAP_TOP"] = anchored_vwap(df, df.index.get_loc(top_idx))
+
+    fig.add_trace(go.Scatter(
+        x=df.index,
+        y=df["VWAP_TOP"],
+        mode="lines",
+        line=dict(color="red", width=1.5),
+        name="VWAP from Top"
+    ))
+
+    # -------------------------
+    # VWAP FROM MAJOR BOTTOM
+    # -------------------------
+    bottom_idx = df["Low"].idxmin()
+    df["VWAP_BOTTOM"] = anchored_vwap(df, df.index.get_loc(bottom_idx))
+
+    fig.add_trace(go.Scatter(
+        x=df.index,
+        y=df["VWAP_BOTTOM"],
+        mode="lines",
+        line=dict(color="green", width=1.5),
+        name="VWAP from Bottom"
+    ))
+
+    # -------------------------
+    # BULLISH DIVERGENCE MARKERS
+    # -------------------------
     fig.add_trace(go.Scatter(
         x=[df.index[i1], df.index[i2]],
         y=[df["Low"].iloc[i1], df["Low"].iloc[i2]],
@@ -184,17 +243,43 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
         name="Bullish Divergence"
     ))
 
+    # -------------------------
+    # VOLUME
+    # -------------------------
     fig.add_trace(go.Bar(
-        x=df.index, y=df["Volume"],
+        x=df.index,
+        y=df["Volume"],
         marker_color="rgba(0,150,255,0.3)",
         name="Volume",
         yaxis="y2"
     ))
 
+    # -------------------------
+    # RSI PANEL BELOW
+    # -------------------------
+    fig.add_trace(go.Scatter(
+        x=df.index,
+        y=df["RSI"],
+        mode="lines",
+        line=dict(color="cyan", width=2),
+        name="RSI",
+        yaxis="y4"
+    ))
+
+    # -------------------------
+    # LAYOUT
+    # -------------------------
     fig.update_layout(
         height=900,
         xaxis=dict(domain=[0, 1]),
-        yaxis=dict(title="Price", side="right"),
+
+        # Main price axis
+        yaxis=dict(
+            title="Price",
+            side="right"
+        ),
+
+        # Volume axis
         yaxis2=dict(
             title="Volume",
             overlaying="y",
@@ -202,11 +287,18 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
             showgrid=False,
             rangemode="tozero"
         ),
-        yaxis3=dict(
+
+        # RSI axis
+        yaxis4=dict(
+            title="RSI",
+            anchor="x",
             overlaying="y",
-            side="right",
-            showticklabels=False
+            side="left",
+            position=0.0,
+            range=[0, 100],
+            showgrid=True
         ),
+
         showlegend=True,
         margin=dict(l=10, r=10, t=40, b=10)
     )
