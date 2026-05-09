@@ -99,23 +99,31 @@ def compute_divergences(df):
     hidden_bear = []
 
     for i in range(2, len(df)):
+        L0 = float(df["Low"].iloc[i])
+        L1 = float(df["Low"].iloc[i-1])
+        H0 = float(df["High"].iloc[i])
+        H1 = float(df["High"].iloc[i-1])
+        R0 = float(df["RSI"].iloc[i])
+        R1 = float(df["RSI"].iloc[i-1])
+
         # Classic Bullish
-        if df["Low"].iloc[i] < df["Low"].iloc[i-1] and df["RSI"].iloc[i] > df["RSI"].iloc[i-1]:
-            bull.append((df.index[i], df["Low"].iloc[i]))
+        if L0 < L1 and R0 > R1:
+            bull.append((df.index[i], L0))
 
         # Classic Bearish
-        if df["High"].iloc[i] > df["High"].iloc[i-1] and df["RSI"].iloc[i] < df["RSI"].iloc[i-1]:
-            bear.append((df.index[i], df["High"].iloc[i]))
+        if H0 > H1 and R0 < R1:
+            bear.append((df.index[i], H0))
 
         # Hidden Bullish
-        if df["Low"].iloc[i] > df["Low"].iloc[i-1] and df["RSI"].iloc[i] < df["RSI"].iloc[i-1]:
-            hidden_bull.append((df.index[i], df["Low"].iloc[i]))
+        if L0 > L1 and R0 < R1:
+            hidden_bull.append((df.index[i], L0))
 
         # Hidden Bearish
-        if df["High"].iloc[i] < df["High"].iloc[i-1] and df["RSI"].iloc[i] > df["RSI"].iloc[i-1]:
-            hidden_bear.append((df.index[i], df["High"].iloc[i]))
+        if H0 < H1 and R0 > R1:
+            hidden_bear.append((df.index[i], H0))
 
     return bull, bear, hidden_bull, hidden_bear
+
 
 # ============================================================
 # PULLBACK SETUP (HIGH VOLUME + EMA21 + RSI 50–68)
