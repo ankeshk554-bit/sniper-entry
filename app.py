@@ -1,808 +1,619 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import yfinance as yf
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import warnings
-
-warnings.filterwarnings("ignore")
-
-# Optional libs
-try:
-    import ta
-except:
-    ta = None
-
 # ============================================================
-# UNIVERSE (NIFTY200 PLACEHOLDER)
+# NIFTY200 LIST
 # ============================================================
 NIFTY200 = [
-    "INFY.NS", "TCS.NS", "RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS",
-    "SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS", "LT.NS", "ITC.NS"
+    "RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS","HINDUNILVR.NS","ITC.NS","LT.NS",
+    "SBIN.NS","BHARTIARTL.NS","KOTAKBANK.NS","HCLTECH.NS","ASIANPAINT.NS","MARUTI.NS","AXISBANK.NS",
+    "SUNPHARMA.NS","BAJFINANCE.NS","ULTRACEMCO.NS","WIPRO.NS","DMART.NS","ADANIENT.NS","ADANIPORTS.NS",
+    "TITAN.NS","ONGC.NS","POWERGRID.NS","NTPC.NS","JSWSTEEL.NS","TATASTEEL.NS","M&M.NS","BAJAJFINSV.NS",
+    "HDFCLIFE.NS","SBILIFE.NS","DIVISLAB.NS","DRREDDY.NS","BRITANNIA.NS","NESTLEIND.NS","HEROMOTOCO.NS",
+    "EICHERMOT.NS","BAJAJ-AUTO.NS","COALINDIA.NS","GRASIM.NS","TECHM.NS","CIPLA.NS","SHREECEM.NS",
+    "BPCL.NS","IOC.NS","HINDALCO.NS","VEDL.NS","UPL.NS","ABB.NS","AMBUJACEM.NS","APOLLOHOSP.NS",
+    "AUROPHARMA.NS","BANDHANBNK.NS","BANKBARODA.NS","BEL.NS","BERGEPAINT.NS","BIOCON.NS","BOSCHLTD.NS",
+    "CANBK.NS","CHOLAFIN.NS","CUMMINSIND.NS","DABUR.NS","DLF.NS","GAIL.NS","GLAND.NS","GODREJCP.NS",
+    "HAVELLS.NS","ICICIPRULI.NS","IGL.NS","INDHOTEL.NS","INDIGO.NS","INDUSINDBK.NS","JINDALSTEL.NS",
+    "LUPIN.NS","MCDOWELL-N.NS","MFSL.NS","MUTHOOTFIN.NS","NAUKRI.NS","PEL.NS","PIDILITIND.NS",
+    "PIIND.NS","PNB.NS","POLYCAB.NS","RECLTD.NS","SAIL.NS","SRF.NS","TATACONSUM.NS","TATAMOTORS.NS",
+    "TATAPOWER.NS","TORNTPHARM.NS","TRENT.NS","TVSMOTOR.NS","UBL.NS","VOLTAS.NS","ZEEL.NS"
 ]
 
-# ============================================================
-# GLOBAL SETTINGS
-# ============================================================
-if "settings" not in st.session_state:
-    st.session_state["settings"] = {
-        "default_tf": "1d",
-        "default_years": 2,
-        "default_risk": 2000,
-        "show_rsi": True,
-        "show_macd": True,
-        "show_ema": True,
-        "show_avwap": True,
-        "show_divergences": True,
-        "show_volume": True
-    }
+import numpy as np
+import pandas as pd
+import streamlit as st
+import yfinance as yf
+from datetime import date, timedelta
+import plotly.graph_objects as go
 
 # ============================================================
-# DATA LOADER
+# STREAMLIT CONFIG
 # ============================================================
-@st.cache_data
-def load_data(ticker, interval="1d", years=2):
-    try:
-        df = yf.download(
-            ticker,
-            period=f"{years}y",
-            interval=interval,
-            auto_adjust=True,
-            progress=False
-        )
-        return df
-    except Exception:
-        return pd.DataFrame()
+st.set_page_config(page_title="Sniper Terminal – Ankesh", layout="wide")
 
 # ============================================================
-# INDICATORS (EMA21, EMA200, RSI, MACD)
+# CACHING LAYERS (SUPER SPEED)
 # ============================================================
+@st.cache_data(show_spinner=False)
+def load_data(ticker, interval, years=1):
+    """Fast cached data loader for all timeframes including weekly."""
+    if interval == "1wk":
+        period = "5y"   # Y1 selection
+        return yf.download(ticker, period=period, interval="1wk",
+                           auto_adjust=True, progress=False)
+    else:
+        return yf.download(ticker, period=f"{years}y", interval=interval,
+                           auto_adjust=True, progress=False)
+
+@st.cache_data(show_spinner=False)
 def compute_indicators(df):
+    """Cached indicator computation."""
     df = df.copy()
-    if df.empty:
-        return df
-
-    df["EMA21"] = df["Close"].ewm(span=21, adjust=False).mean()
     df["EMA200"] = df["Close"].ewm(span=200, adjust=False).mean()
 
-    if ta is not None:
-        df["RSI"] = ta.momentum.rsi(df["Close"], window=14)
-    else:
-        df["RSI"] = 50
+    # RSI
+    delta = df["Close"].diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    gain_ema = gain.ewm(span=14, adjust=False).mean()
+    loss_ema = loss.ewm(span=14, adjust=False).mean()
+    rs = gain_ema / loss_ema
+    df["RSI"] = 100 - (100 / (1 + rs))
 
-    if ta is not None:
-        macd = ta.trend.MACD(df["Close"], window_slow=26, window_fast=12, window_sign=9)
-        df["MACD"] = macd.macd()
-        df["MACD_SIGNAL"] = macd.macd_signal()
-        df["MACD_HIST"] = macd.macd_diff()
-    else:
-        df["MACD"] = df["MACD_SIGNAL"] = df["MACD_HIST"] = 0
+    # ATR
+    high, low, close = df["High"], df["Low"], df["Close"]
+    tr1 = high - low
+    tr2 = (high - close.shift()).abs()
+    tr3 = (low - close.shift()).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    df["ATR"] = tr.ewm(span=14, adjust=False).mean()
+
+    # AVWAP
+    tp = (df["High"] + df["Low"] + df["Close"]) / 3
+    df["AVWAP"] = (tp * df["Volume"]).cumsum() / df["Volume"].cumsum()
 
     return df
 
 # ============================================================
-# SANITIZE DF
+# ANCHORED VWAP (CACHED)
 # ============================================================
-def sanitize_df(df):
+@st.cache_data(show_spinner=False)
+def compute_vwaps(df):
     df = df.copy()
-    numeric_cols = [
-        "Open", "High", "Low", "Close", "Volume",
-        "EMA21", "EMA200", "RSI", "MACD", "MACD_SIGNAL", "MACD_HIST"
-    ]
-    for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-    df = df.dropna(subset=["Open", "High", "Low", "Close"])
+    top_idx = df["High"].idxmax()
+    bottom_idx = df["Low"].idxmin()
+
+    def anchored(df, anchor_index):
+        tp = (df["High"] + df["Low"] + df["Close"]) / 3
+        vol = df["Volume"]
+        cum_vol = vol.iloc[anchor_index:].cumsum()
+        cum_tp_vol = (tp * vol).iloc[anchor_index:].cumsum()
+        vwap = cum_tp_vol / cum_vol
+        full = pd.Series(index=df.index, dtype=float)
+        full.iloc[anchor_index:] = vwap
+        return full
+
+    df["VWAP_TOP"] = anchored(df, df.index.get_loc(top_idx))
+    df["VWAP_BOTTOM"] = anchored(df, df.index.get_loc(bottom_idx))
     return df
 
 # ============================================================
-# DIVERGENCE ENGINE (CLASSIC + HIDDEN)
+# DIVERGENCE ENGINE (BULLISH + BEARISH)
 # ============================================================
+def detect_strict_swing_lows(df):
+    lows = df["Low"].values
+    mask = np.zeros(len(df), dtype=bool)
+    for i in range(2, len(df)-2):
+        if lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
+            mask[i] = True
+    return mask
+
+def detect_strict_swing_highs(df):
+    highs = df["High"].values
+    mask = np.zeros(len(df), dtype=bool)
+    for i in range(2, len(df)-2):
+        if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
+            mask[i] = True
+    return mask
+
+def detect_rsi_bullish_divergence(df, mask):
+    divs = []
+    idxs = np.where(mask)[0]
+    for j in range(1, len(idxs)):
+        i1, i2 = idxs[j-1], idxs[j]
+        if df["Low"].iloc[i2] < df["Low"].iloc[i1] and df["RSI"].iloc[i2] > df["RSI"].iloc[i1]:
+            divs.append((i1, i2))
+    return divs
+
+def detect_rsi_bearish_divergence(df, mask):
+    divs = []
+    idxs = np.where(mask)[0]
+    for j in range(1, len(idxs)):
+        i1, i2 = idxs[j-1], idxs[j]
+        if df["High"].iloc[i2] > df["High"].iloc[i1] and df["RSI"].iloc[i2] < df["RSI"].iloc[i1]:
+            divs.append((i1, i2))
+    return divs
+
+@st.cache_data(show_spinner=False)
 def compute_divergences(df):
-    df = sanitize_df(df)
+    """Cached divergence engine — returns only last bullish + last bearish."""
+    lows_mask = detect_strict_swing_lows(df)
+    highs_mask = detect_strict_swing_highs(df)
 
-    if df.empty or "RSI" not in df.columns:
-        return [], [], [], []
+    bull = detect_rsi_bullish_divergence(df, lows_mask)
+    bear = detect_rsi_bearish_divergence(df, highs_mask)
 
-    bull = []
-    bear = []
-    hidden_bull = []
-    hidden_bear = []
+    last_bull = [bull[-1]] if bull else []
+    last_bear = [bear[-1]] if bear else []
 
-    for i in range(2, len(df)):
-        try:
-            L0 = float(df["Low"].iloc[i])
-            L1 = float(df["Low"].iloc[i-1])
-            H0 = float(df["High"].iloc[i])
-            H1 = float(df["High"].iloc[i-1])
-            R0 = float(df["RSI"].iloc[i])
-            R1 = float(df["RSI"].iloc[i-1])
-        except Exception:
-            continue
-
-        if any(np.isnan(x) for x in [L0, L1, H0, H1, R0, R1]):
-            continue
-
-        # Classic Bullish
-        if L0 < L1 and R0 > R1:
-            bull.append((df.index[i], L0))
-
-        # Classic Bearish
-        if H0 > H1 and R0 < R1:
-            bear.append((df.index[i], H0))
-
-        # Hidden Bullish
-        if L0 > L1 and R0 < R1:
-            hidden_bull.append((df.index[i], L0))
-
-        # Hidden Bearish
-        if H0 < H1 and R0 > R1:
-            hidden_bear.append((df.index[i], H0))
-
-    return bull, bear, hidden_bull, hidden_bear
-
+    return last_bull, last_bear
 # ============================================================
-# PULLBACK SETUP (HIGH VOLUME + EMA21 + RSI 50–68)
+# WEEKLY TREND FILTER (CACHED)
 # ============================================================
-def detect_pullback_setups(df):
-    df = df.copy()
-    setups = []
-
-    if df.empty or "Volume" not in df.columns or "EMA21" not in df.columns or "RSI" not in df.columns:
-        return setups
-
-    for i in range(21, len(df)):
-        window = df.iloc[i-20:i]
-        hh20 = window["High"].max()
-        avg_vol = window["Volume"].mean()
-
-        close_i = df["Close"].iloc[i]
-        high_i = df["High"].iloc[i]
-        low_i = df["Low"].iloc[i]
-        open_i = df["Open"].iloc[i]
-        vol_i = df["Volume"].iloc[i]
-        ema21_i = df["EMA21"].iloc[i]
-        rsi_i = df["RSI"].iloc[i]
-
-        breakout = close_i > hh20
-        high_vol = vol_i > 1.5 * avg_vol
-        touch_ema21 = low_i <= ema21_i <= high_i
-        rsi_ok = 50 <= rsi_i <= 68
-        bullish = close_i > open_i
-
-        if breakout and high_vol and touch_ema21 and rsi_ok and bullish:
-            setups.append((df.index[i], close_i))
-
-    return setups
-
-# ============================================================
-# AVWAP (10-BAR MAJOR SWING HIGH/LOW)
-# ============================================================
-def find_major_swings(df, lookback=10):
-    swing_high = None
-    swing_low = None
-
-    for i in range(lookback, len(df)-lookback):
-        if df["High"].iloc[i] == df["High"].iloc[i-lookback:i+lookback+1].max():
-            swing_high = df.index[i]
-        if df["Low"].iloc[i] == df["Low"].iloc[i-lookback:i+lookback+1].min():
-            swing_low = df.index[i]
-
-    return swing_high, swing_low
-
-def compute_avwap(df, anchor_index):
-    if anchor_index is None:
-        return pd.Series([np.nan] * len(df), index=df.index)
-
-    df2 = df.loc[anchor_index:].copy()
-    pv = (df2["Close"] * df2["Volume"]).cumsum()
-    v = df2["Volume"].cumsum()
-    avwap = pv / v
-
-    full = pd.Series([np.nan] * len(df), index=df.index)
-    full.loc[anchor_index:] = avwap
-    return full
-
-# ============================================================
-# CHART ENGINE (PRICE + VOLUME + RSI + MACD + DIVERGENCE LINES)
-# ============================================================
-def plot_ultra_chart(df, bull_divs, bear_divs, hidden_bull, hidden_bear, pullbacks):
-    df = df.copy()
-    if df.empty:
-        return go.Figure()
-
-    swing_high, swing_low = find_major_swings(df, lookback=10)
-    df["AVWAP_HIGH"] = compute_avwap(df, swing_high)
-    df["AVWAP_LOW"] = compute_avwap(df, swing_low)
-
-    fig = make_subplots(
-        rows=4, cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.02,
-        row_heights=[0.55, 0.15, 0.15, 0.15]
+@st.cache_data(show_spinner=False)
+def get_weekly_trend(ticker):
+    df_w = yf.download(
+        ticker,
+        period="5y",
+        interval="1wk",
+        auto_adjust=True,
+        progress=False
     )
+    if df_w.empty:
+        return None
 
-    # PRICE
+    if isinstance(df_w.columns, pd.MultiIndex):
+        df_w.columns = df_w.columns.get_level_values(0)
+
+    df_w = df_w.apply(pd.to_numeric, errors="coerce")
+    df_w["EMA200"] = df_w["Close"].ewm(span=200, adjust=False).mean()
+
+    # RSI
+    delta = df_w["Close"].diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    gain_ema = gain.ewm(span=14, adjust=False).mean()
+    loss_ema = loss.ewm(span=14, adjust=False).mean()
+    rs = gain_ema / loss_ema
+    df_w["RSI"] = 100 - (100 / (1 + rs))
+
+    df_w = df_w.dropna(subset=["EMA200", "RSI"])
+    if df_w.empty:
+        return None
+
+    df_w["TrendW"] = (df_w["Close"] > df_w["EMA200"]) & (df_w["RSI"] > 50)
+    return df_w["TrendW"]
+
+
+# ============================================================
+# STRENGTH SCORE (uses last bullish divergence)
+# ============================================================
+def compute_strength(df, i1, i2):
+    rsi_slope = df["RSI"].iloc[i2] - df["RSI"].iloc[i1]
+    depth = df["Low"].iloc[i1] - df["Low"].iloc[i2]
+    ema_dist = df["Close"].iloc[i2] - df["EMA200"].iloc[i2]
+    atr_val = df["ATR"].iloc[i2]
+
+    score = (rsi_slope * 0.4) + (depth * 0.3) + (ema_dist * 0.2) + (atr_val * 0.1)
+    return round(score, 2)
+
+
+# ============================================================
+# SCREENER ENGINE (FAST + CACHED)
+# ============================================================
+def scan_stock(ticker, interval, use_trend, fresh_only):
+    try:
+        df = load_data(ticker, interval, years=1)
+        if df.empty:
+            return None
+
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        df = compute_indicators(df)
+        bull_divs, bear_divs = compute_divergences(df)
+
+        if not bull_divs:
+            return None
+
+        # Weekly trend filter
+        if use_trend:
+            tw = get_weekly_trend(ticker)
+            if tw is None:
+                return None
+            df["TrendW"] = tw.reindex(df.index, method="ffill")
+
+        # Last bullish divergence
+        i1, i2 = bull_divs[-1]
+
+        # Fresh divergence check
+        if fresh_only and i2 < len(df) - 3:
+            return None
+
+        # Trend filter check
+        if use_trend and not bool(df["TrendW"].iloc[i2]):
+            return None
+
+        # Entry candle check
+        next_idx = i2 + 1
+        open_n = df["Open"].iloc[next_idx] if next_idx < len(df) else df["Close"].iloc[-1]
+
+        if open_n < df["EMA200"].iloc[i2] or open_n < df["AVWAP"].iloc[i2]:
+            return None
+
+        if df["ATR"].iloc[i2] <= 0:
+            return None
+
+        strength = compute_strength(df, i1, i2)
+
+        return {
+            "Ticker": ticker,
+            "SignalDate": df.index[i2],
+            "Strength": strength,
+            "i1": i1,
+            "i2": i2
+        }
+
+    except Exception:
+        return None
+
+
+# ============================================================
+# ULTRA-PRO PLOTLY CHART (F2 + L1)
+# ============================================================
+def plot_ultra_pro_chart(df, bull_divs, bear_divs):
+    df = compute_vwaps(df)
+
+    fig = go.Figure()
+
+    # -------------------------
+    # MAIN PRICE CHART
+    # -------------------------
     fig.add_trace(go.Candlestick(
         x=df.index,
         open=df["Open"], high=df["High"],
         low=df["Low"], close=df["Close"],
-        name="Price"
-    ), row=1, col=1)
+        name="Price",
+        yaxis="y1"
+    ))
 
-    # EMA21 + EMA200
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df["EMA21"],
-        mode="lines", line=dict(color="#00e5ff", width=1.5),
-        name="EMA21"
-    ), row=1, col=1)
-
+    # EMA200
     fig.add_trace(go.Scatter(
         x=df.index, y=df["EMA200"],
-        mode="lines", line=dict(color="#ff9100", width=1.5),
-        name="EMA200"
-    ), row=1, col=1)
+        mode="lines",
+        line=dict(color="orange", width=2),
+        name="EMA200",
+        yaxis="y1"
+    ))
 
-    # AVWAP High/Low
+    # AVWAP
     fig.add_trace(go.Scatter(
-        x=df.index, y=df["AVWAP_HIGH"],
-        mode="lines", line=dict(color="#ff1744", width=2),
-        name="AVWAP High"
-    ), row=1, col=1)
+        x=df.index, y=df["AVWAP"],
+        mode="lines",
+        line=dict(color="purple", width=2),
+        name="AVWAP",
+        yaxis="y1"
+    ))
 
+    # VWAP FROM TOP
     fig.add_trace(go.Scatter(
-        x=df.index, y=df["AVWAP_LOW"],
-        mode="lines", line=dict(color="#00e676", width=2),
-        name="AVWAP Low"
-    ), row=1, col=1)
+        x=df.index,
+        y=df["VWAP_TOP"],
+        mode="lines",
+        line=dict(color="red", width=1.5),
+        name="VWAP from Top",
+        yaxis="y1"
+    ))
 
-    # Divergence markers
-    for dt, price in bull_divs:
-        if dt in df.index:
-            fig.add_trace(go.Scatter(
-                x=[dt], y=[price],
-                mode="markers",
-                marker=dict(color="#4caf50", size=10, symbol="triangle-up"),
-                name="Bull Div"
-            ), row=1, col=1)
+    # VWAP FROM BOTTOM
+    fig.add_trace(go.Scatter(
+        x=df.index,
+        y=df["VWAP_BOTTOM"],
+        mode="lines",
+        line=dict(color="green", width=1.5),
+        name="VWAP from Bottom",
+        yaxis="y1"
+    ))
 
-    for dt, price in bear_divs:
-        if dt in df.index:
-            fig.add_trace(go.Scatter(
-                x=[dt], y=[price],
-                mode="markers",
-                marker=dict(color="#f44336", size=10, symbol="triangle-down"),
-                name="Bear Div"
-            ), row=1, col=1)
-
-    for dt, price in hidden_bull:
-        if dt in df.index:
-            fig.add_trace(go.Scatter(
-                x=[dt], y=[price],
-                mode="markers",
-                marker=dict(color="#81c784", size=9, symbol="triangle-up"),
-                name="Hidden Bull"
-            ), row=1, col=1)
-
-    for dt, price in hidden_bear:
-        if dt in df.index:
-            fig.add_trace(go.Scatter(
-                x=[dt], y=[price],
-                mode="markers",
-                marker=dict(color="#ffb74d", size=9, symbol="triangle-down"),
-                name="Hidden Bear"
-            ), row=1, col=1)
-
-    # Divergence lines (pivot-to-pivot) for ALL types
-    def add_div_lines(points, color, name):
-        if len(points) < 2:
-            return
-        xs = [p[0] for p in points]
-        ys = [p[1] for p in points]
+    # -------------------------
+    # DIVERGENCES (ONLY LAST — F2)
+    # -------------------------
+    if bull_divs:
+        i1, i2 = bull_divs[-1]
         fig.add_trace(go.Scatter(
-            x=xs,
-            y=ys,
-            mode="lines",
-            line=dict(color=color, width=1.5, dash="solid"),
-            name=name
-        ), row=1, col=1)
+            x=[df.index[i1], df.index[i2]],
+            y=[df["Low"].iloc[i1], df["Low"].iloc[i2]],
+            mode="markers+lines",
+            marker=dict(color="lime", size=14),   # L1 highlight
+            line=dict(color="lime", width=3),     # L1 highlight
+            name="Bullish Divergence",
+            yaxis="y1"
+        ))
 
-    add_div_lines(bull_divs, "#4caf50", "Bull Div Line")
-    add_div_lines(bear_divs, "#f44336", "Bear Div Line")
-    add_div_lines(hidden_bull, "#81c784", "Hidden Bull Line")
-    add_div_lines(hidden_bear, "#ffb74d", "Hidden Bear Line")
+    if bear_divs:
+        i1_b, i2_b = bear_divs[-1]
+        fig.add_trace(go.Scatter(
+            x=[df.index[i1_b], df.index[i2_b]],
+            y=[df["High"].iloc[i1_b], df["High"].iloc[i2_b]],
+            mode="markers+lines",
+            marker=dict(color="red", size=14),    # L1 highlight
+            line=dict(color="red", width=3),      # L1 highlight
+            name="Bearish Divergence",
+            yaxis="y1"
+        ))
 
-    # Pullbacks
-    for dt, price in pullbacks:
-        if dt in df.index:
-            fig.add_trace(go.Scatter(
-                x=[dt], y=[price],
-                mode="markers",
-                marker=dict(color="#FFD700", size=12, symbol="star"),
-                name="Pullback"
-            ), row=1, col=1)
-
+    # -------------------------
     # VOLUME
+    # -------------------------
     fig.add_trace(go.Bar(
         x=df.index,
         y=df["Volume"],
-        marker_color=np.where(df["Close"] >= df["Open"], "#4caf50", "#f44336"),
-        name="Volume"
-    ), row=2, col=1)
-
-    # RSI
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df["RSI"],
-        mode="lines", line=dict(color="#D4AF37", width=2),
-        name="RSI"
-    ), row=3, col=1)
-
-    fig.add_hline(y=70, line=dict(color="red", dash="dot"), row=3, col=1)
-    fig.add_hline(y=30, line=dict(color="green", dash="dot"), row=3, col=1)
-    fig.add_hline(y=50, line=dict(color="white", dash="dot"), row=3, col=1)
-
-    # MACD
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df["MACD"],
-        mode="lines", line=dict(color="#00e5ff", width=2),
-        name="MACD"
-    ), row=4, col=1)
-
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df["MACD_SIGNAL"],
-        mode="lines", line=dict(color="#ff9100", width=2),
-        name="Signal"
-    ), row=4, col=1)
-
-    fig.add_trace(go.Bar(
-        x=df.index,
-        y=df["MACD_HIST"],
-        marker_color=np.where(df["MACD_HIST"] >= 0, "#4caf50", "#f44336"),
-        name="Histogram"
-    ), row=4, col=1)
-
-    fig.update_layout(
-        xaxis_rangeslider_visible=False,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        height=1000,
-        showlegend=False
-    )
-
-    return fig
-
-# ============================================================
-# WEEKLY TREND FILTER (EMA200 + RSI > 50)
-# ============================================================
-def passes_weekly_trend_filter(ticker):
-    df_w = load_data(ticker, interval="1wk", years=1)
-    if df_w.empty:
-        return False
-
-    df_w = compute_indicators(df_w)
-
-    try:
-        return (
-            df_w["Close"].iloc[-1] > df_w["EMA200"].iloc[-1] and
-            df_w["RSI"].iloc[-1] > 50
-        )
-    except Exception:
-        return False
-
-# ============================================================
-# SCREENER ENGINE
-# ============================================================
-def run_screener(tickers, interval_s, fresh_only=True, use_trend=True):
-    results = []
-
-    for t in tickers:
-        df = load_data(t, interval=interval_s, years=st.session_state["settings"]["default_years"])
-        if df.empty:
-            continue
-
-        df = compute_indicators(df)
-
-        if use_trend and not passes_weekly_trend_filter(t):
-            continue
-
-        bull, bear, hidden_bull, hidden_bear = compute_divergences(df)
-        pullbacks = detect_pullback_setups(df)
-
-        if fresh_only:
-            last_idx = df.index[-3:]
-            bull = [(d, p) for (d, p) in bull if d in last_idx]
-            bear = [(d, p) for (d, p) in bear if d in last_idx]
-            hidden_bull = [(d, p) for (d, p) in hidden_bull if d in last_idx]
-            hidden_bear = [(d, p) for (d, p) in hidden_bear if d in last_idx]
-            pullbacks = [(d, p) for (d, p) in pullbacks if d in last_idx]
-
-        signal_type = None
-        signal_date = None
-        strength = 0
-        bias = "Neutral"
-
-        if pullbacks:
-            signal_type = "PULLBACK"
-            signal_date = pullbacks[-1][0]
-            strength = 120
-            bias = "Bullish"
-        elif bull:
-            signal_type = "BULLISH"
-            signal_date = bull[-1][0]
-            strength = 100
-            bias = "Bullish"
-        elif hidden_bull:
-            signal_type = "HIDDEN_BULL"
-            signal_date = hidden_bull[-1][0]
-            strength = 90
-            bias = "Bullish"
-        elif bear:
-            signal_type = "BEARISH"
-            signal_date = bear[-1][0]
-            strength = 100
-            bias = "Bearish"
-        elif hidden_bear:
-            signal_type = "HIDDEN_BEAR"
-            signal_date = hidden_bear[-1][0]
-            strength = 90
-            bias = "Bearish"
-
-        if signal_type is not None:
-            results.append({
-                "Ticker": t,
-                "SignalType": signal_type,
-                "SignalDate": signal_date,
-                "Strength": strength,
-                "Bias": bias
-            })
-
-    if results:
-        return pd.DataFrame(results)
-    return pd.DataFrame()
-
-# ============================================================
-# SPARKLINE GENERATOR
-# ============================================================
-def make_sparkline(df):
-    if df.empty:
-        return go.Figure()
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=df.index,
-        y=df["Close"],
-        mode="lines",
-        line=dict(color="#00e676", width=2)
+        marker_color="rgba(0,150,255,0.3)",
+        name="Volume",
+        yaxis="y2"
     ))
 
+    # -------------------------
+    # RSI PANEL
+    # -------------------------
+    fig.add_trace(go.Scatter(
+        x=df.index,
+        y=df["RSI"],
+        mode="lines",
+        line=dict(color="cyan", width=2),
+        name="RSI",
+        yaxis="y3"
+    ))
+
+    # RSI divergences (highlight only last)
+    if bull_divs:
+        i1, i2 = bull_divs[-1]
+        fig.add_trace(go.Scatter(
+            x=[df.index[i1], df.index[i2]],
+            y=[df["RSI"].iloc[i1], df["RSI"].iloc[i2]],
+            mode="markers+lines",
+            marker=dict(color="lime", size=10),
+            line=dict(color="lime", width=2),
+            name="Bullish Div (RSI)",
+            yaxis="y3"
+        ))
+
+    if bear_divs:
+        i1_b, i2_b = bear_divs[-1]
+        fig.add_trace(go.Scatter(
+            x=[df.index[i1_b], df.index[i2_b]],
+            y=[df["RSI"].iloc[i1_b], df["RSI"].iloc[i2_b]],
+            mode="markers+lines",
+            marker=dict(color="red", size=10),
+            line=dict(color="red", width=2),
+            name="Bearish Div (RSI)",
+            yaxis="y3"
+        ))
+
+    # -------------------------
+    # LAYOUT
+    # -------------------------
     fig.update_layout(
-        xaxis=dict(visible=False),
-        yaxis=dict(visible=False),
-        margin=dict(l=0, r=0, t=0, b=0),
-        height=60,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)"
+        height=950,
+
+        yaxis=dict(title="Price", domain=[0.35, 1.0], side="right"),
+        yaxis2=dict(title="Volume", domain=[0.35, 1.0],
+                    overlaying="y", side="left", showgrid=False),
+        yaxis3=dict(title="RSI", domain=[0, 0.30], range=[0, 100]),
+
+        xaxis=dict(domain=[0, 1], rangeslider=dict(visible=False)),
+
+        showlegend=True,
+        margin=dict(l=10, r=10, t=40, b=10)
     )
+
     return fig
 
-# ============================================================
-# WEEKLY TREND STATUS
-# ============================================================
-def weekly_trend_status(ticker):
-    df_w = load_data(ticker, interval="1wk", years=1)
-    if df_w.empty:
-        return "Unknown"
-
-    df_w = compute_indicators(df_w)
-
-    try:
-        if df_w["Close"].iloc[-1] > df_w["EMA200"].iloc[-1] and df_w["RSI"].iloc[-1] > 50:
-            return "Bullish"
-        else:
-            return "Bearish"
-    except Exception:
-        return "Unknown"
 
 # ============================================================
-# WATCHLIST PANEL
+# BACKTEST ENGINE (FAST)
 # ============================================================
-def render_watchlist_panel(watchlist):
-    st.sidebar.subheader("📌 Watchlist")
-
-    if not watchlist:
-        st.sidebar.info("No tickers added yet.")
-        return
-
-    for t in watchlist:
-        df = load_data(t, interval="1d", years=1)
-        df = compute_indicators(df)
-
-        trend = weekly_trend_status(t)
-        color = "🟢" if trend == "Bullish" else "🔴"
-
-        st.sidebar.markdown(f"### {color} {t} — {trend}")
-
-        spark = make_sparkline(df)
-        st.sidebar.plotly_chart(spark, use_container_width=True, height=60)
-
-        if st.sidebar.button(f"Open {t} Chart", key=f"open_{t}"):
-            st.session_state["chart_ticker"] = t
-
-# ============================================================
-# SETTINGS PANEL
-# ============================================================
-def render_settings_panel():
-    st.sidebar.subheader("⚙️ Settings")
-
-    st.session_state["settings"]["default_tf"] = st.sidebar.selectbox(
-        "Default Timeframe",
-        ["1d", "1h", "15m", "1wk"],
-        index=["1d", "1h", "15m", "1wk"].index(st.session_state["settings"]["default_tf"])
-    )
-
-    st.session_state["settings"]["default_years"] = st.sidebar.slider(
-        "Years of Data",
-        1, 5, st.session_state["settings"]["default_years"]
-    )
-
-    st.session_state["settings"]["default_risk"] = st.sidebar.number_input(
-        "Risk per Trade (₹)",
-        min_value=500,
-        max_value=20000,
-        value=st.session_state["settings"]["default_risk"],
-        step=500
-    )
-
-    st.sidebar.markdown("---")
-
-    st.session_state["settings"]["show_rsi"] = st.sidebar.checkbox(
-        "Show RSI Panel", value=True
-    )
-    st.session_state["settings"]["show_macd"] = st.sidebar.checkbox(
-        "Show MACD Panel", value=True
-    )
-    st.session_state["settings"]["show_volume"] = st.sidebar.checkbox(
-        "Show Volume Panel", value=True
-    )
-    st.session_state["settings"]["show_ema"] = st.sidebar.checkbox(
-        "Show EMA21 + EMA200", value=True
-    )
-    st.session_state["settings"]["show_avwap"] = st.sidebar.checkbox(
-        "Show AVWAP High/Low", value=True
-    )
-    st.session_state["settings"]["show_divergences"] = st.sidebar.checkbox(
-        "Show Divergences", value=True
-    )
-
-# ============================================================
-# ATR CALCULATION
-# ============================================================
-def compute_atr(df, period=14):
-    high_low = df["High"] - df["Low"]
-    high_close = np.abs(df["High"] - df["Close"].shift())
-    low_close = np.abs(df["Low"] - df["Close"].shift())
-    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    atr = tr.rolling(period).mean()
-    return atr
-
-# ============================================================
-# AUTO‑TRADER (SIMULATED EXECUTION)
-# ============================================================
-def auto_trader(df, signals, risk_per_trade=2000):
+def run_backtest(df, bull_divs, risk, trend_series, use_trend):
     df = df.copy()
-    df["ATR"] = compute_atr(df)
+    df.index.name = "Timestamp"
+    df = df.reset_index().reset_index(drop=True)
+
+    if use_trend and trend_series is not None:
+        df["TrendW"] = trend_series.reindex(df["Timestamp"], method="ffill")
+    elif use_trend:
+        return [], 0
 
     trades = []
-    position = None
+    equity = 0
 
-    for i in range(2, len(df)):
-        date = df.index[i]
-        close = df["Close"].iloc[i]
-        atr = df["ATR"].iloc[i]
+    for (_, i2) in bull_divs:
+        if use_trend and not bool(df["TrendW"].iloc[i2]):
+            continue
 
-        if position is None:
-            if date in signals:
-                entry_price = df["Open"].iloc[i+1] if i+1 < len(df) else close
-                sl = entry_price - 1.5 * atr
-                tp = entry_price + 2 * atr
+        entry_idx = i2 + 1
+        if entry_idx >= len(df):
+            continue
 
-                if atr is None or np.isnan(atr) or atr == 0:
-                    continue
+        open_n = float(df["Open"].iloc[entry_idx])
+        ema_v = float(df["EMA200"].iloc[entry_idx])
+        avwap_v = float(df["AVWAP"].iloc[entry_idx])
+        atr_v = float(df["ATR"].iloc[entry_idx])
 
-                qty = max(1, int(risk_per_trade / max(entry_price - sl, 0.01)))
+        if atr_v <= 0:
+            continue
+        if open_n < ema_v or open_n < avwap_v:
+            continue
 
-                position = {
-                    "entry_date": date,
-                    "entry_price": entry_price,
-                    "sl": sl,
-                    "tp": tp,
-                    "qty": qty
-                }
-        else:
-            low = df["Low"].iloc[i]
-            high = df["High"].iloc[i]
+        sl = open_n - 1.5 * atr_v
+        tp = open_n + 2 * atr_v
+        risk_per_share = open_n - sl
 
-            if low <= position["sl"]:
-                exit_price = position["sl"]
-                pnl = (exit_price - position["entry_price"]) * position["qty"]
-                trades.append({
-                    "EntryDate": position["entry_date"],
-                    "ExitDate": date,
-                    "Entry": position["entry_price"],
-                    "Exit": exit_price,
-                    "PnL": pnl
-                })
-                position = None
-                continue
+        if risk_per_share <= 0:
+            continue
 
-            if high >= position["tp"]:
-                exit_price = position["tp"]
-                pnl = (exit_price - position["entry_price"]) * position["qty"]
-                trades.append({
-                    "EntryDate": position["entry_date"],
-                    "ExitDate": date,
-                    "Entry": position["entry_price"],
-                    "Exit": exit_price,
-                    "PnL": pnl
-                })
-                position = None
-                continue
+        qty = max(int(risk / risk_per_share), 1)
 
-    return pd.DataFrame(trades)
+        exit_p = None
+        exit_idx = None
 
+        for j in range(entry_idx + 1, len(df)):
+            if df["Low"].iloc[j] <= sl:
+                exit_p = sl
+                exit_idx = j
+                break
+            if df["High"].iloc[j] >= tp:
+                exit_p = tp
+                exit_idx = j
+                break
+
+        if exit_p is None:
+            exit_p = float(df["Close"].iloc[-1])
+            exit_idx = len(df) - 1
+
+        pnl = (exit_p - open_n) * qty
+        equity += pnl
+
+        trades.append({
+            "Entry": df["Timestamp"].iloc[entry_idx],
+            "Exit": df["Timestamp"].iloc[exit_idx],
+            "EntryPrice": round(open_n, 2),
+            "ExitPrice": round(exit_p, 2),
+            "Qty": qty,
+            "PnL": round(pnl, 2),
+            "Equity": round(equity, 2)
+        })
+
+    return trades, equity
 # ============================================================
-# MAIN APP
+# STREAMLIT UI
 # ============================================================
 def main():
-    st.set_page_config(page_title="Sniper Divergence Terminal", layout="wide")
-    st.title("Sniper Divergence Terminal – AVWAP + RSI + MACD")
 
-    if "watchlist" not in st.session_state:
-        st.session_state["watchlist"] = []
-    if "chart_ticker" not in st.session_state:
-        st.session_state["chart_ticker"] = "INFY.NS"
+    tab_screener, tab_backtest = st.tabs(["📊 Screener", "📈 Backtest"])
 
-    render_settings_panel()
-    render_watchlist_panel(st.session_state["watchlist"])
+    # ========================================================
+    # 📊 SCREENER TAB
+    # ========================================================
+    with tab_screener:
+        st.title("Sniper Divergence Screener – NIFTY200")
 
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("➕ Manage Watchlist")
-    new_ticker = st.sidebar.text_input("Add ticker (e.g. INFY.NS)")
-    if st.sidebar.button("Add to Watchlist"):
-        t = new_ticker.strip().upper()
-        if t and t not in st.session_state["watchlist"]:
-            st.session_state["watchlist"].append(t)
-    if st.sidebar.button("Clear Watchlist"):
-        st.session_state["watchlist"] = []
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            universe = st.selectbox("Universe", ["NIFTY200", "Custom"], key="universe_sel")
+        with col2:
+            interval_s = st.selectbox("Timeframe", ["1d", "1h", "15m", "1wk"], key="screener_tf")
+        with col3:
+            mode = st.selectbox("View Mode", ["Simple", "Detailed"], key="view_mode_sel")
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        universe = st.selectbox("Universe", ["NIFTY200", "Custom"])
-    with col2:
-        interval_s = st.selectbox(
-            "Timeframe",
-            ["1d", "1h", "15m", "1wk"],
-            index=["1d", "1h", "15m", "1wk"].index(st.session_state["settings"]["default_tf"])
+        use_trend = st.checkbox(
+            "Use Weekly Trend Filter (EMA200 + RSI>50)",
+            value=True,
+            key="trend_filter_screener"
         )
-    with col3:
-        fresh_only = st.checkbox("Fresh signals (last 3 candles)", value=True)
 
-    if universe == "Custom":
-        custom = st.text_input("Enter tickers (comma separated)", "INFY.NS, TCS.NS")
-        tickers = [x.strip().upper() for x in custom.split(",") if x.strip()]
-    else:
-        tickers = NIFTY200
+        fresh_only = st.checkbox(
+            "Show Only Fresh Divergences (Last 3 Candles)",
+            value=True,
+            key="fresh_only_toggle"
+        )
 
-    use_trend = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True)
+        # Universe selection
+        if universe == "Custom":
+            custom = st.text_input("Enter tickers", "HAL.NS", key="custom_tickers")
+            tickers = [x.strip() for x in custom.split(",") if x.strip()]
+        else:
+            tickers = NIFTY200
 
-    tab1, tab2, tab3 = st.tabs(["📊 Screener", "📈 Chart", "🤖 Auto‑Trader"])
+        # Run Screener Button
+        if st.button("Run Screener", key="run_screener_btn"):
+            st.info("Scanning…")
 
-    # TAB 1: Screener
-    with tab1:
-        if st.button("Run Screener"):
-            df_res = run_screener(tickers, interval_s, fresh_only=fresh_only, use_trend=use_trend)
-            if df_res.empty:
+            results = []
+            for t in tickers:
+                r = scan_stock(t, interval_s, use_trend, fresh_only)
+                if r:
+                    results.append(r)
+
+            if not results:
                 st.warning("No setups found.")
             else:
-                st.session_state["last_screener"] = df_res
-                st.dataframe(df_res, use_container_width=True)
-        else:
-            df_res = st.session_state.get("last_screener", pd.DataFrame())
-            if not df_res.empty:
-                st.dataframe(df_res, use_container_width=True)
+                st.session_state["screener_results"] = pd.DataFrame(results).sort_values("Strength", ascending=False)
+
+        # Display Results + Chart
+        if "screener_results" in st.session_state:
+            df_res = st.session_state["screener_results"]
+
+            if mode == "Simple":
+                st.dataframe(df_res[["Ticker", "SignalDate", "Strength"]], use_container_width=True)
             else:
-                st.info("Run the screener to see results.")
+                st.dataframe(df_res, use_container_width=True)
 
-        df_res = st.session_state.get("last_screener", pd.DataFrame())
-        if not df_res.empty:
-            st.markdown("### Add from Screener to Watchlist")
-            for _, row in df_res.iterrows():
-                t = row["Ticker"]
-                c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
-                with c1:
-                    st.write(t)
-                with c2:
-                    st.write(row["SignalType"])
-                with c3:
-                    st.write(row["Bias"])
-                with c4:
-                    if st.button("➕", key=f"add_{t}"):
-                        if t not in st.session_state["watchlist"]:
-                            st.session_state["watchlist"].append(t)
+            selected = st.selectbox(
+                "Select a ticker to view chart",
+                df_res["Ticker"],
+                key="chart_ticker_select"
+            )
 
-    # TAB 2: Chart
-    with tab2:
-        st.markdown("### Chart")
+            if selected:
+                row = df_res[df_res["Ticker"] == selected].iloc[0]
+                ticker = row["Ticker"]
 
-        colc1, colc2 = st.columns([2, 1])
-        with colc1:
-            ticker = st.text_input("Ticker", st.session_state["chart_ticker"])
-        with colc2:
-            if st.button("Use from Watchlist Selected?"):
-                ticker = st.session_state["chart_ticker"]
+                df = load_data(ticker, interval_s, years=1)
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
 
-        st.session_state["chart_ticker"] = ticker.strip().upper()
+                df = compute_indicators(df)
+                bull_divs, bear_divs = compute_divergences(df)
 
-        df = load_data(
-            st.session_state["chart_ticker"],
-            interval=interval_s,
-            years=st.session_state["settings"]["default_years"]
+                with st.expander(f"📈 Full-Screen Chart – {ticker}", expanded=True):
+                    fig = plot_ultra_pro_chart(df, bull_divs, bear_divs)
+                    st.plotly_chart(fig, use_container_width=True)
+
+    # ========================================================
+    # 📈 BACKTEST TAB
+    # ========================================================
+    with tab_backtest:
+        st.title("Sniper Backtester")
+
+        ticker = st.text_input("Ticker", "HAL.NS", key="bt_ticker")
+        interval_b = st.selectbox("Timeframe", ["1d", "1h", "15m", "1wk"], key="backtest_tf")
+        risk = st.number_input("Risk per Trade (₹)", value=2000, key="bt_risk")
+        years = st.slider("Years of Data", 1, 5, 2, key="bt_years")
+
+        use_trend_bt = st.checkbox(
+            "Use Weekly Trend Filter (EMA200 + RSI>50)",
+            value=True,
+            key="trend_filter_backtest"
         )
-        if df.empty:
-            st.error("No data for this ticker/timeframe.")
-        else:
+
+        if st.button("Run Backtest", key="run_backtest_btn"):
+            df = load_data(ticker, interval_b, years=years)
+
+            if df.empty:
+                st.error("No data available for this ticker.")
+                return
+
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+
             df = compute_indicators(df)
-            bull, bear, hidden_bull, hidden_bear = compute_divergences(df)
-            pullbacks = detect_pullback_setups(df)
-            fig = plot_ultra_chart(df, bull, bear, hidden_bull, hidden_bear, pullbacks)
-            st.plotly_chart(fig, use_container_width=True)
+            bull_divs, bear_divs = compute_divergences(df)
 
-    # TAB 3: Auto‑Trader
-    with tab3:
-        st.markdown("### Auto‑Trader (Simulated)")
+            trend_series = get_weekly_trend(ticker) if use_trend_bt else None
 
-        ticker_auto = st.text_input("Ticker for Auto‑Trader", st.session_state["chart_ticker"], key="auto_ticker")
-        df_auto = load_data(
-            ticker_auto,
-            interval=interval_s,
-            years=st.session_state["settings"]["default_years"]
-        )
-        if df_auto.empty:
-            st.error("No data for this ticker/timeframe.")
-        else:
-            df_auto = compute_indicators(df_auto)
-            bull_a, bear_a, hidden_bull_a, hidden_bear_a = compute_divergences(df_auto)
-            pullbacks_a = detect_pullback_setups(df_auto)
+            trades, eq = run_backtest(df, bull_divs, risk, trend_series, use_trend_bt)
+            df_trades = pd.DataFrame(trades)
 
-            signal_dates = set([d for d, _ in pullbacks_a] + [d for d, _ in bull_a])
+            if df_trades.empty:
+                st.info("No trades generated.")
+            else:
+                st.subheader("Backtest Results")
+                st.dataframe(df_trades, use_container_width=True)
 
-            risk = st.session_state["settings"]["default_risk"]
-            st.write(f"Risk per trade: ₹{risk}")
+                st.metric("Total PnL", f"₹{round(eq, 2)}")
+                st.metric("Total Trades", len(df_trades))
 
-            if st.button("Run Auto‑Trader Backtest"):
-                trades = auto_trader(df_auto, signal_dates, risk_per_trade=risk)
-                if trades.empty:
-                    st.warning("No trades generated.")
-                else:
-                    trades["CumPnL"] = trades["PnL"].cumsum()
-                    st.dataframe(trades, use_container_width=True)
 
-                    eq_fig = go.Figure()
-                    eq_fig.add_trace(go.Scatter(
-                        x=trades["ExitDate"],
-                        y=trades["CumPnL"],
-                        mode="lines+markers",
-                        line=dict(color="#00e676", width=2),
-                        name="Equity Curve"
-                    ))
-                    eq_fig.update_layout(
-                        title="Equity Curve",
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        plot_bgcolor="rgba(0,0,0,0)"
-                    )
-                    st.plotly_chart(eq_fig, use_container_width=True)
-
-# ENTRY POINT
+# ============================================================
+# MAIN ENTRY POINT
+# ============================================================
 if __name__ == "__main__":
     main()
