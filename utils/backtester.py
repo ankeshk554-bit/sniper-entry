@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 def run_backtest(df, divergence_pairs, risk_per_trade=2000):
-    # FULL HARD RESET OF INDEX (fixes all Series comparison errors)
+    # Clean and stabilize dataframe
     df = df.copy()
     df = df[~df.index.duplicated(keep='first')]
     df = df.sort_index()
@@ -11,21 +11,23 @@ def run_backtest(df, divergence_pairs, risk_per_trade=2000):
     trades = []
     equity = 0
 
-    # Convert divergence pairs into entry indices
-    divergence_entries = {i2 for (_, i2) in divergence_pairs}
-
+    # We IGNORE divergence_pairs now and use Div_Arrow as entry signal
     for i in range(len(df)):
-        if i not in divergence_entries:
+        # Entry only where divergence arrow exists
+        if pd.isna(df.at[i, "Div_Arrow"]):
             continue
 
-        # Extract scalars safely
         close_i = float(df.at[i, "Close"])
         ema_i = float(df.at[i, "EMA200"])
         avwap_i = float(df.at[i, "AVWAP"])
         atr_i = float(df.at[i, "ATR"])
 
-        # Skip invalid rows
-        if np.isnan(close_i) or np.isnan(ema_i) or np.isnan(avwap_i) or np.isnan(atr_i):
+        if (
+            np.isnan(close_i)
+            or np.isnan(ema_i)
+            or np.isnan(avwap_i)
+            or np.isnan(atr_i)
+        ):
             continue
 
         # Trend filter
@@ -50,7 +52,6 @@ def run_backtest(df, divergence_pairs, risk_per_trade=2000):
         exit_price = None
         exit_index = None
 
-        # Forward simulation
         for j in range(i + 1, len(df)):
             low_j = float(df.at[j, "Low"])
             high_j = float(df.at[j, "High"])
@@ -68,7 +69,6 @@ def run_backtest(df, divergence_pairs, risk_per_trade=2000):
                 exit_index = j
                 break
 
-        # No exit found → exit at last close
         if exit_price is None:
             exit_price = float(df.at[len(df) - 1, "Close"])
             exit_index = len(df) - 1
