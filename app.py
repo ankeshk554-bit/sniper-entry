@@ -84,7 +84,7 @@ with st.sidebar:
         <div style='font-family:Syne,sans-serif;font-size:1.1rem;font-weight:800;color:white;letter-spacing:0.04em'>
             ⚡ SNIPER <span style='color:#4f6ef7'>TERMINAL</span>
         </div>
-        <div style='font-size:0.6rem;color:#505872;letter-spacing:0.12em;margin-top:2px'>SWING ENGINE v2.2</div>
+        <div style='font-size:0.6rem;color:#505872;letter-spacing:0.12em;margin-top:2px'>SWING ENGINE v2.3</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -103,19 +103,22 @@ with st.sidebar:
     st.markdown(f"<div>{chips_html}</div>", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# INDICATOR HELPERS (FAST)
+# INDICATOR HELPERS (FAST, SERIES‑SAFE)
 # ─────────────────────────────────────────────
 def ema(series, span):
+    series = pd.Series(series)
     return series.ewm(span=span, adjust=False).mean()
 
 def rsi(series, length=14):
+    series = pd.Series(series)
     delta = series.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
     avg_gain = gain.rolling(length).mean()
     avg_loss = loss.rolling(length).mean()
     rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
+    rsi_val = 100 - (100 / (1 + rs))
+    return rsi_val
 
 def fast_avwap(df, start_idx):
     c = df['Close'].values[start_idx:]
@@ -127,7 +130,29 @@ def fast_avwap(df, start_idx):
     return out
 
 # ─────────────────────────────────────────────
-# BACKTEST ENGINE (WITH WEEKLY TREND FILTER)
+# WEEKLY TREND FROM DAILY DATA (NO ALIGN ISSUES)
+# ─────────────────────────────────────────────
+def compute_weekly_trend_from_daily(df):
+    """
+    Build weekly close from daily data via resample,
+    compute weekly EMA200, then map back to daily.
+    """
+    # Ensure DateTimeIndex
+    df = df.copy()
+    df = df.sort_index()
+
+    weekly_close = df['Close'].resample('W-FRI').last()
+    weekly_ema200 = ema(weekly_close, 200)
+    weekly_trend = weekly_close > weekly_ema200
+
+    # Map weekly trend back to daily via forward‑fill
+    trend_w_daily = weekly_trend.reindex(df.index, method='ffill')
+    trend_w_daily = trend_w_daily.fillna(False)
+
+    return trend_w_daily
+
+# ─────────────────────────────────────────────
+# BACKTEST ENGINE
 # ─────────────────────────────────────────────
 def run_backtest(df, risk_per_trade=2000, use_mtf=True):
     df = df.copy()
@@ -135,7 +160,7 @@ def run_backtest(df, risk_per_trade=2000, use_mtf=True):
     # Daily trend
     df['Trend'] = df['Close'] > df['EMA200']
 
-    # Entry condition (MTF optional)
+    # Entry condition
     if use_mtf:
         df['Entry'] = (
             (df['RSI'] < 32) &
@@ -171,6 +196,8 @@ def run_backtest(df, risk_per_trade=2000, use_mtf=True):
 
     trades = []
     in_trade = False
+    entry_i = None
+    entry_price = sl = tgt = qty = None
 
     for i in range(len(df)):
         if (not in_trade) and df['Entry'].iloc[i] and df['Qty'].iloc[i] > 0 and df['Risk'].iloc[i] > 0:
@@ -226,33 +253,19 @@ try:
     df = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
 
     if not df.empty:
+        # Flatten MultiIndex if present
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
+
+        df = df.sort_index()
 
         # Daily indicators
         df['EMA200'] = ema(df['Close'], 200)
         df['EMA50']  = ema(df['Close'], 50)
         df['RSI']    = rsi(df['Close'], 14)
 
-        # Weekly trend filter (safe alignment using merge_asof)
-        df_w = yf.download(ticker, period="5y", interval="1wk", auto_adjust=True)
-        if not df_w.empty:
-            df_w['EMA200'] = ema(df_w['Close'], 200)
-            df_w['TrendW'] = df_w['Close'] > df_w['EMA200']
-
-            daily = df.reset_index().rename(columns={'index': 'Date'})
-            weekly = df_w.reset_index().rename(columns={'index': 'Date'})
-
-            mtf = pd.merge_asof(
-                daily[['Date']],
-                weekly[['Date', 'TrendW']].sort_values('Date'),
-                on='Date',
-                direction='backward'
-            )
-
-            df['TrendW'] = mtf['TrendW'].fillna(False).values
-        else:
-            df['TrendW'] = False
+        # Weekly trend from daily data (no second download, no alignment issues)
+        df['TrendW'] = compute_weekly_trend_from_daily(df)
 
         # AVWAP
         t_idx = int(df['High'].argmax())
