@@ -191,17 +191,6 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
         yaxis="y2"
     ))
 
-    if trend_series is not None:
-    trend_series = trend_series.reindex(df.index, method="ffill")
-    fig.add_trace(go.Scatter(
-        x=df.index,
-        y=df["Low"] * 0 + df["Low"].min(),  # flat baseline
-        mode="lines",
-        line=dict(color="green", width=2),
-        name="Weekly Trend (Up)"
-    ))
-
-
     fig.update_layout(
         height=900,
         xaxis=dict(domain=[0, 1]),
