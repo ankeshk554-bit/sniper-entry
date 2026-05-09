@@ -70,6 +70,76 @@ def get_weekly_trend(ticker):
     return df_w["TrendW"]
 
 # ============================================================
+# STRICT SWING LOWS (Bullish)
+# ============================================================
+def detect_strict_swing_lows(df):
+    lows = df['Low'].values
+    mask = np.zeros(len(df), dtype=bool)
+    for i in range(2, len(df)-2):
+        if lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
+            mask[i] = True
+    return mask
+
+
+# ============================================================
+# STRICT SWING HIGHS (Bearish)
+# ============================================================
+def detect_strict_swing_highs(df):
+    highs = df['High'].values
+    mask = np.zeros(len(df), dtype=bool)
+    for i in range(2, len(df)-2):
+        if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
+            mask[i] = True
+    return mask
+
+
+# ============================================================
+# BULLISH DIVERGENCE (Price ↓, RSI ↑)
+# ============================================================
+def detect_rsi_bullish_divergence(df, mask):
+    divs = []
+    idxs = np.where(mask)[0]
+    for j in range(1, len(idxs)):
+        i1, i2 = idxs[j-1], idxs[j]
+        if df['Low'].iloc[i2] < df['Low'].iloc[i1] and df['RSI'].iloc[i2] > df['RSI'].iloc[i1]:
+            divs.append((i1, i2))
+    return divs
+
+
+# ============================================================
+# BEARISH DIVERGENCE (Price ↑, RSI ↓)
+# ============================================================
+def detect_rsi_bearish_divergence(df, mask):
+    divs = []
+    idxs = np.where(mask)[0]
+    for j in range(1, len(idxs)):
+        i1, i2 = idxs[j-1], idxs[j]
+        if df['High'].iloc[i2] > df['High'].iloc[i1] and df['RSI'].iloc[i2] < df['RSI'].iloc[i1]:
+            divs.append((i1, i2))
+    return divs
+
+
+# ============================================================
+# MASTER DIVERGENCE ENGINE (Returns BOTH)
+# ============================================================
+def apply_divergence_engine(df):
+    df = df.copy()
+    df["EMA200"] = ema(df["Close"], 200)
+    df["RSI"] = rsi(df["Close"])
+    df["ATR"] = atr(df)
+    df["AVWAP"] = avwap(df)
+
+    # Bullish
+    lows_mask = detect_strict_swing_lows(df)
+    bull_divs = detect_rsi_bullish_divergence(df, lows_mask)
+
+    # Bearish
+    highs_mask = detect_strict_swing_highs(df)
+    bear_divs = detect_rsi_bearish_divergence(df, highs_mask)
+
+    return df, bull_divs, bear_divs
+
+# ============================================================
 # DIVERGENCE ENGINE
 # ============================================================
 def detect_strict_swing_lows(df):
