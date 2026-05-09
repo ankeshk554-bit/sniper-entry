@@ -1,3 +1,25 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import datetime
+import yfinance as yf
+import plotly.graph_objects as go
+
+import warnings
+warnings.filterwarnings("ignore")
+
+# Optional libs
+try:
+    import ta
+except:
+    ta = None
+
+try:
+    from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+    AGGRID_AVAILABLE = True
+except:
+    AGGRID_AVAILABLE = False
+
 # ============================================================
 # NIFTY200 LIST
 # ============================================================
@@ -16,29 +38,6 @@ NIFTY200 = [
     "PIIND.NS","PNB.NS","POLYCAB.NS","RECLTD.NS","SAIL.NS","SRF.NS","TATACONSUM.NS","TATAMOTORS.NS",
     "TATAPOWER.NS","TORNTPHARM.NS","TRENT.NS","TVSMOTOR.NS","UBL.NS","VOLTAS.NS","ZEEL.NS"
 ]
-
-import streamlit as st
-import pandas as pd
-import numpy as np
-import datetime
-import yfinance as yf
-import plotly.graph_objects as go
-import plotly.express as px
-
-import warnings
-warnings.filterwarnings("ignore")
-
-# Optional libs
-try:
-    import ta
-except:
-    ta = None
-
-try:
-    from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
-    AGGRID_AVAILABLE = True
-except:
-    AGGRID_AVAILABLE = False
 
 # ============================================================
 # GLOBAL STATE INITIALIZATION
@@ -82,10 +81,6 @@ if "auto_trader" not in st.session_state:
         "trade_log": []
     }
 
-# Dummy universe
-NIFTY200 = ["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS", "HAL.NS"]
-
-
 # ============================================================
 # NOTIFICATION SYSTEM
 # ============================================================
@@ -113,7 +108,6 @@ def notify(message, type="info"):
         unsafe_allow_html=True
     )
 
-
 # ============================================================
 # DATA + INDICATORS
 # ============================================================
@@ -125,7 +119,6 @@ def load_data(ticker, interval="1d", years=2):
         return df
     except:
         return pd.DataFrame()
-
 
 def compute_indicators(df):
     df = df.copy()
@@ -147,16 +140,16 @@ def compute_indicators(df):
 
     return df
 
-
 # ============================================================
 # FULL DIVERGENCE ENGINE (CLASSIC + HIDDEN)
 # ============================================================
 def compute_divergences(df):
     df = df.copy()
-
-    # Ensure RSI exists
     if "RSI" not in df.columns:
-        df["RSI"] = ta.momentum.rsi(df["Close"], window=14)
+        if ta is not None:
+            df["RSI"] = ta.momentum.rsi(df["Close"], window=14)
+        else:
+            df["RSI"] = 50
 
     bull_divs = []
     bear_divs = []
@@ -164,38 +157,23 @@ def compute_divergences(df):
     hidden_bear = []
 
     for i in range(2, len(df)):
-
-        # -----------------------------
-        # CLASSIC BULLISH DIVERGENCE
-        # Price LL + RSI HL
-        # -----------------------------
+        # Classic Bullish: Price LL + RSI HL
         if df["Low"].iloc[i] < df["Low"].iloc[i-1] and df["RSI"].iloc[i] > df["RSI"].iloc[i-1]:
             bull_divs.append((df.index[i], df["Low"].iloc[i]))
 
-        # -----------------------------
-        # CLASSIC BEARISH DIVERGENCE
-        # Price HH + RSI LH
-        # -----------------------------
+        # Classic Bearish: Price HH + RSI LH
         if df["High"].iloc[i] > df["High"].iloc[i-1] and df["RSI"].iloc[i] < df["RSI"].iloc[i-1]:
             bear_divs.append((df.index[i], df["High"].iloc[i]))
 
-        # -----------------------------
-        # HIDDEN BULLISH DIVERGENCE
-        # Price HL + RSI LL
-        # -----------------------------
+        # Hidden Bullish: Price HL + RSI LL
         if df["Low"].iloc[i] > df["Low"].iloc[i-1] and df["RSI"].iloc[i] < df["RSI"].iloc[i-1]:
             hidden_bull.append((df.index[i], df["Low"].iloc[i]))
 
-        # -----------------------------
-        # HIDDEN BEARISH DIVERGENCE
-        # Price LH + RSI HH
-        # -----------------------------
+        # Hidden Bearish: Price LH + RSI HH
         if df["High"].iloc[i] < df["High"].iloc[i-1] and df["RSI"].iloc[i] > df["RSI"].iloc[i-1]:
             hidden_bear.append((df.index[i], df["High"].iloc[i]))
 
     return bull_divs, bear_divs, hidden_bull, hidden_bear
-
-
 
 # ============================================================
 # SPARKLINE GENERATOR
@@ -228,7 +206,6 @@ def generate_sparkline(ticker):
     except:
         return None
 
-
 # ============================================================
 # TREND + DIVERGENCE BADGES
 # ============================================================
@@ -246,7 +223,6 @@ def get_trend_badge(ticker):
     except:
         return "—"
 
-
 def get_divergence_badge(ticker):
     try:
         df = yf.download(ticker, period="1y", interval="1d", auto_adjust=True, progress=False)
@@ -256,15 +232,13 @@ def get_divergence_badge(ticker):
         df = compute_indicators(df)
         bull, bear, hidden_bull, hidden_bear = compute_divergences(df)
 
-
-        if bull:
+        if bull or hidden_bull:
             return "<span style='color:#4caf50;font-weight:700;'>BULL</span>"
-        if bear:
+        if bear or hidden_bear:
             return "<span style='color:#f44336;font-weight:700;'>BEAR</span>"
         return "<span style='color:#AAAAAA;'>NONE</span>"
     except:
         return "—"
-
 
 # ============================================================
 # SMC + ORDERFLOW + MTF + BIAS
@@ -304,7 +278,6 @@ def detect_smc(df):
 
     return smc
 
-
 def compute_orderflow(df):
     if df.empty:
         return "Neutral"
@@ -317,7 +290,6 @@ def compute_orderflow(df):
     elif val < 0:
         return "Bearish"
     return "Neutral"
-
 
 def get_mtf_divergences(ticker):
     timeframes = {
@@ -333,15 +305,16 @@ def get_mtf_divergences(ticker):
             results[tf_name] = {"last_bull": None, "last_bear": None}
             continue
         df = compute_indicators(df)
-        bull, bear = compute_divergences(df)
+        bull, bear, hidden_bull, hidden_bear = compute_divergences(df)
         results[tf_name] = {
             "bull": bull,
             "bear": bear,
+            "hidden_bull": hidden_bull,
+            "hidden_bear": hidden_bear,
             "last_bull": bull[-1] if bull else None,
             "last_bear": bear[-1] if bear else None
         }
     return results
-
 
 def compute_alignment_score(mtf):
     score = 0
@@ -362,7 +335,6 @@ def compute_alignment_score(mtf):
     if mtf["15M"]["last_bear"]:
         score -= 15
     return max(min(score, 100), -100)
-
 
 def compute_bias(alignment, orderflow, smc):
     score = alignment
@@ -385,18 +357,17 @@ def compute_bias(alignment, orderflow, smc):
         return "Bearish"
     return "Neutral"
 
-
 # ============================================================
 # AI TRADE IDEA GENERATOR (SIMPLIFIED)
 # ============================================================
 def generate_trade_idea(ticker, df, mtf, smc, orderflow):
     idea = {}
     df = df.copy()
-    bull, bear = compute_divergences(df)
+    bull, bear, hidden_bull, hidden_bear = compute_divergences(df)
 
-    if mtf["Daily"]["last_bull"] or bull:
+    if mtf["Daily"]["last_bull"] or bull or hidden_bull:
         idea["Direction"] = "Long"
-    elif mtf["Daily"]["last_bear"] or bear:
+    elif mtf["Daily"]["last_bear"] or bear or hidden_bear:
         idea["Direction"] = "Short"
     else:
         idea["Direction"] = "Neutral"
@@ -432,7 +403,6 @@ def generate_trade_idea(ticker, df, mtf, smc, orderflow):
     idea["Confluence"] = max(min(score, 100), -100)
     return idea
 
-
 # ============================================================
 # DIVERGENCE ALERT ENGINE
 # ============================================================
@@ -451,7 +421,6 @@ def check_for_new_divergences(df_res):
             st.session_state["prev_signals"][t] = sig
     return alerts
 
-
 def check_trend_change(ticker):
     if "trend_state" not in st.session_state:
         st.session_state["trend_state"] = {}
@@ -464,7 +433,6 @@ def check_trend_change(ticker):
         st.session_state["trend_state"][ticker] = current
         return current
     return None
-
 
 # ============================================================
 # LUXURY SCREENER TABLE
@@ -531,7 +499,6 @@ def render_screener_table(df_res, mode: str):
             st.dataframe(styled[["Ticker", "SignalDate", "Strength", "Bias"]], use_container_width=True)
         else:
             st.dataframe(styled, use_container_width=True)
-
 
 # ============================================================
 # WATCHLIST PANEL (LUXURY)
@@ -606,11 +573,11 @@ def render_watchlist_panel(df_res=None):
     st.markdown('</div>', unsafe_allow_html=True)
     return selected
 
-
 # ============================================================
 # CHART FUNCTION
 # ============================================================
 def plot_ultra_pro_chart(df, bull_divs, bear_divs,
+                         hidden_bull, hidden_bear,
                          show_ema=True, show_avwap=True,
                          show_vwap_top=True, show_vwap_bottom=True,
                          show_divergences=True, show_rsi=True,
@@ -659,9 +626,45 @@ def plot_ultra_pro_chart(df, bull_divs, bear_divs,
             name="VWAP Bottom", yaxis="y1"
         ))
 
-    # Divergences placeholder (no actual markers)
-    return fig
+    if show_divergences:
+        # Classic Bullish
+        for t, price in bull_divs:
+            fig.add_trace(go.Scatter(
+                x=[t], y=[price],
+                mode="markers",
+                marker=dict(color="#4caf50", size=10, symbol="triangle-up"),
+                name="Bull Div", yaxis="y1",
+                showlegend=False
+            ))
+        # Classic Bearish
+        for t, price in bear_divs:
+            fig.add_trace(go.Scatter(
+                x=[t], y=[price],
+                mode="markers",
+                marker=dict(color="#f44336", size=10, symbol="triangle-down"),
+                name="Bear Div", yaxis="y1",
+                showlegend=False
+            ))
+        # Hidden Bullish
+        for t, price in hidden_bull:
+            fig.add_trace(go.Scatter(
+                x=[t], y=[price],
+                mode="markers",
+                marker=dict(color="#00e676", size=9, symbol="triangle-up"),
+                name="Hidden Bull", yaxis="y1",
+                showlegend=False
+            ))
+        # Hidden Bearish
+        for t, price in hidden_bear:
+            fig.add_trace(go.Scatter(
+                x=[t], y=[price],
+                mode="markers",
+                marker=dict(color="#ff5252", size=9, symbol="triangle-down"),
+                name="Hidden Bear", yaxis="y1",
+                showlegend=False
+            ))
 
+    return fig
 
 def make_price_rsi_chart(df, show_rsi):
     fig = go.Figure()
@@ -678,7 +681,6 @@ def make_price_rsi_chart(df, show_rsi):
         height=600
     )
     return fig
-
 
 # ============================================================
 # SETTINGS PANEL
@@ -740,7 +742,6 @@ def render_settings_panel():
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-
 # ============================================================
 # AUTO-TRADER ENGINE (SIMULATED)
 # ============================================================
@@ -780,7 +781,6 @@ def auto_execute_trade(ticker, idea):
                 "Size": idea["PositionSize"],
                 "Time": datetime.datetime.now()
             })
-
 
 def auto_exit_positions(df, ticker):
     pos = st.session_state["auto_trader"]["positions"]
@@ -833,7 +833,6 @@ def auto_exit_positions(df, ticker):
         })
         del pos[ticker]
 
-
 def auto_rebalance():
     pos = st.session_state["auto_trader"]["positions"]
     n = len(pos)
@@ -843,7 +842,6 @@ def auto_rebalance():
     for t in pos:
         pos[t]["target_weight"] = equal_weight
 
-
 def auto_hedge(ticker, df, bias):
     pos = st.session_state["auto_trader"]["positions"]
     if ticker not in pos:
@@ -852,7 +850,6 @@ def auto_hedge(ticker, df, bias):
         pos[ticker]["hedged"] = True
     if pos[ticker]["side"] == "Short" and "Bullish" in bias:
         pos[ticker]["hedged"] = True
-
 
 # ============================================================
 # PORTFOLIO ANALYTICS (SIMPLIFIED)
@@ -893,7 +890,6 @@ def compute_trade_stats(trades):
         "TotalPnL": df["PnL"].sum()
     }
 
-
 def simulate_equity_curve(trades):
     if len(trades) == 0:
         return None
@@ -913,7 +909,6 @@ def simulate_equity_curve(trades):
         height=300
     )
     return fig
-
 
 # ============================================================
 # MAIN APP
@@ -975,7 +970,7 @@ def main():
         )
 
         if universe == "Custom":
-            custom = st.text_input("Enter tickers", "HAL.NS", key="custom_tickers")
+            custom = st.text_input("Enter tickers (comma separated)", "HAL.NS", key="custom_tickers")
             tickers = [x.strip() for x in custom.split(",") if x.strip()]
         else:
             tickers = NIFTY200
@@ -989,191 +984,109 @@ def main():
                 unsafe_allow_html=True
             )
 
-        # Auto-refresh engine
         if st.session_state["auto_refresh"]:
             now = datetime.datetime.now()
             if st.session_state["last_scan"] is None or (now - st.session_state["last_scan"]).seconds > 300:
                 run_click = True
                 st.session_state["last_scan"] = now
-                notify("Auto‑refresh: scanning universe…", "info")
+                notify("Auto‑refresh: scanning universe for divergences…", "info")
 
+        df_res = None
         if run_click:
-            st.info("Scanning universe for bullish divergences…")
-            results = []
+            rows = []
+            st.write("Scanning universe for bullish / bearish / hidden divergences…")
             for t in tickers:
-                df = load_data(t, interval_s, years=1)
+                df = load_data(t, interval_s, years=st.session_state["settings"]["default_years"])
                 if df.empty:
                     continue
                 df = compute_indicators(df)
-                bull, bear = compute_divergences(df)
-                if not bull and not bear:
+                bull, bear, hidden_bull, hidden_bear = compute_divergences(df)
+
+                if fresh_only:
+                    bull = [x for x in bull if x[0] >= df.index[-3]]
+                    bear = [x for x in bear if x[0] >= df.index[-3]]
+                    hidden_bull = [x for x in hidden_bull if x[0] >= df.index[-3]]
+                    hidden_bear = [x for x in hidden_bear if x[0] >= df.index[-3]]
+
+                if not bull and not bear and not hidden_bull and not hidden_bear:
                     continue
-                strength = np.random.randint(50, 200)
-                signal_date = df.index[-1]
+
+                trend_ok = True
+                if use_trend:
+                    wdf = yf.download(t, period="1y", interval="1wk", auto_adjust=True, progress=False)
+                    if not wdf.empty:
+                        wdf["EMA200"] = wdf["Close"].ewm(span=200, adjust=False).mean()
+                        if not (wdf["Close"].iloc[-1] > wdf["EMA200"].iloc[-1]):
+                            trend_ok = False
+                if not trend_ok:
+                    continue
+
+                last_signal = None
+                if bull:
+                    last_signal = bull[-1][0]
+                if bear:
+                    last_signal = bear[-1][0]
+                if hidden_bull:
+                    last_signal = hidden_bull[-1][0]
+                if hidden_bear:
+                    last_signal = hidden_bear[-1][0]
+
+                strength = 0
+                strength += 40 * len(bull)
+                strength += 40 * len(bear)
+                strength += 30 * len(hidden_bull)
+                strength += 30 * len(hidden_bear)
+
                 mtf = get_mtf_divergences(t)
-                alignment = compute_alignment_score(mtf)
                 smc = detect_smc(df)
                 orderflow = compute_orderflow(df)
-                bias = compute_bias(alignment, orderflow, smc)
-                results.append({
+                bias = compute_bias(compute_alignment_score(mtf), orderflow, smc)
+
+                rows.append({
                     "Ticker": t,
-                    "SignalDate": signal_date,
+                    "SignalDate": last_signal,
                     "Strength": strength,
-                    "Alignment": alignment,
                     "Bias": bias
                 })
-            if not results:
-                st.warning("No setups found.")
+
+            if rows:
+                df_res = pd.DataFrame(rows).sort_values("Strength", ascending=False)
+                st.session_state["screener_results"] = df_res
+                alerts = check_for_new_divergences(df_res)
+                for t, sig in alerts:
+                    notify(f"New divergence signal on {t} at {sig}", "success")
+                render_screener_table(df_res, mode_view)
             else:
-                st.session_state["screener_results"] = pd.DataFrame(results).sort_values("Strength", ascending=False)
+                st.write("No setups found.")
+
+        if st.session_state["screener_results"] is not None and not st.session_state["screener_results"].empty:
+            st.markdown("### Watchlist & Quick View")
+            selected = render_watchlist_panel(st.session_state["screener_results"])
+            if selected:
+                df = load_data(selected, interval_s, years=st.session_state["settings"]["default_years"])
+                df = compute_indicators(df)
+                bull, bear, hidden_bull, hidden_bear = compute_divergences(df)
+                fig = plot_ultra_pro_chart(
+                    df, bull, bear, hidden_bull, hidden_bear,
+                    show_ema=st.session_state["settings"]["show_ema"],
+                    show_avwap=st.session_state["settings"]["show_avwap"],
+                    show_vwap_top=st.session_state["settings"]["show_vwap_top"],
+                    show_vwap_bottom=st.session_state["settings"]["show_vwap_bottom"],
+                    show_divergences=st.session_state["settings"]["show_divergences"],
+                    show_rsi=st.session_state["settings"]["show_rsi"],
+                    zoom_range="1Y"
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
         st.markdown('</div>', unsafe_allow_html=True)
 
-        df_res = st.session_state["screener_results"]
-        if df_res is not None and not df_res.empty:
-            left_col, right_col = st.columns([3, 1])
-
-            with left_col:
-                st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-                st.subheader("Signals Grid")
-                render_screener_table(df_res, mode_view)
-
-                selected = st.selectbox(
-                    "Select a ticker to view chart",
-                    df_res["Ticker"],
-                    key="chart_ticker_select"
-                )
-                st.markdown('</div>', unsafe_allow_html=True)
-
-                if selected:
-                    row = df_res[df_res["Ticker"] == selected].iloc[0]
-                    ticker = row["Ticker"]
-                    df = load_data(ticker, interval_s, years=st.session_state["settings"]["default_years"])
-                    df = compute_indicators(df)
-                    bull_divs, bear_divs = compute_divergences(df)
-
-                    st.markdown(
-                        f"""
-                        <div class="glass-card">
-                            <h4 style="margin-top:0;">{ticker} • Divergence Snapshot</h4>
-                            <p>Last Signal: <b>{row['SignalDate'].strftime('%Y-%m-%d')}</b> • 
-                            Strength: <b>{row['Strength']}</b> • Bias: <b>{row['Bias']}</b></p>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
-
-                    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-                    st.subheader("Chart Controls")
-                    c1, c2, c3, c4, c5, c6 = st.columns(6)
-                    s = st.session_state["settings"]
-                    with c1:
-                        s["show_ema"] = st.toggle("EMA200", s["show_ema"])
-                    with c2:
-                        s["show_avwap"] = st.toggle("AVWAP", s["show_avwap"])
-                    with c3:
-                        s["show_vwap_top"] = st.toggle("VWAP Top", s["show_vwap_top"])
-                    with c4:
-                        s["show_vwap_bottom"] = st.toggle("VWAP Bottom", s["show_vwap_bottom"])
-                    with c5:
-                        s["show_divergences"] = st.toggle("Divergences", s["show_divergences"])
-                    with c6:
-                        s["show_rsi"] = st.toggle("RSI Panel", s["show_rsi"])
-
-                    st.markdown("### Zoom Presets")
-                    z1, z2, z3, z4 = st.columns(4)
-                    if "zoom_range" not in st.session_state:
-                        st.session_state["zoom_range"] = "1Y"
-                    if z1.button("1M"):
-                        st.session_state["zoom_range"] = "1M"
-                    if z2.button("3M"):
-                        st.session_state["zoom_range"] = "3M"
-                    if z3.button("6M"):
-                        st.session_state["zoom_range"] = "6M"
-                    if z4.button("1Y"):
-                        st.session_state["zoom_range"] = "1Y"
-
-                    if st.button("📸 Download Chart as PNG"):
-                        st.session_state["download_chart"] = True
-
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-                    with st.expander(f"📈 Full-Screen Chart – {ticker}", expanded=True):
-                        fig = plot_ultra_pro_chart(
-                            df, bull_divs, bear_divs,
-                            s["show_ema"], s["show_avwap"],
-                            s["show_vwap_top"], s["show_vwap_bottom"],
-                            s["show_divergences"], s["show_rsi"],
-                            st.session_state["zoom_range"]
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                        if st.session_state.get("download_chart", False):
-                            try:
-                                png = fig.to_image(format="png")
-                                st.download_button(
-                                    label="Download PNG",
-                                    data=png,
-                                    file_name=f"{ticker}_chart.png",
-                                    mime="image/png"
-                                )
-                            except Exception:
-                                st.warning("Plotly image export not available in this environment.")
-                            st.session_state["download_chart"] = False
-
-                    # AI Trade Idea
-                    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-                    st.subheader("AI Trade Idea")
-                    mtf = get_mtf_divergences(ticker)
-                    alignment = compute_alignment_score(mtf)
-                    smc = detect_smc(df)
-                    orderflow = compute_orderflow(df)
-                    bias = compute_bias(alignment, orderflow, smc)
-                    idea = generate_trade_idea(ticker, df, mtf, smc, orderflow)
-
-                    st.write(f"**Direction:** {idea['Direction']}")
-                    st.write(f"**Entry:** {idea['Entry']}")
-                    st.write(f"**Stop Loss:** {idea['SL']}")
-                    st.write(f"**Take Profit:** {idea['TP']}")
-                    st.write(f"**Position Size:** {idea['PositionSize']} units")
-                    st.write(f"**Confluence Score:** {idea['Confluence']} / 100")
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-                    # Auto-trader integration
-                    if st.session_state["auto_trader"]["enabled"]:
-                        auto_execute_trade(ticker, idea)
-                        auto_exit_positions(df, ticker)
-                        auto_hedge(ticker, df, bias)
-                        auto_rebalance()
-
-            with right_col:
-                wl_selected = render_watchlist_panel(df_res)
-                if wl_selected:
-                    df_w = load_data(wl_selected, interval_s, years=1)
-                    df_w = compute_indicators(df_w)
-                    bull_w, bear_w = compute_divergences(df_w)
-                    fig_w = plot_ultra_pro_chart(
-                        df_w, bull_w, bear_w,
-                        st.session_state["settings"]["show_ema"],
-                        st.session_state["settings"]["show_avwap"],
-                        st.session_state["settings"]["show_vwap_top"],
-                        st.session_state["settings"]["show_vwap_bottom"],
-                        st.session_state["settings"]["show_divergences"],
-                        st.session_state["settings"]["show_rsi"],
-                        st.session_state.get("zoom_range", "1Y")
-                    )
-                    st.plotly_chart(fig_w, use_container_width=True)
-
-            alerts = check_for_new_divergences(df_res)
-            for t, sig in alerts:
-                notify(f"New divergence detected on {t} at {sig}", "success")
-
     # ========================================================
-    # BACKTEST TAB (SIMPLE PLACEHOLDER)
+    # BACKTEST TAB (placeholder simple)
     # ========================================================
     with tab_backtest:
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.subheader("Backtest (Placeholder)")
-        st.info("Hook your existing backtest engine here and push trades into st.session_state['trade_history'].")
+        st.write("Backtest engine wiring can be added here later with your strategy rules.")
         st.markdown('</div>', unsafe_allow_html=True)
 
     # ========================================================
@@ -1188,32 +1101,35 @@ def main():
     with tab_portfolio:
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.subheader("Portfolio Analytics")
-        trades = st.session_state["auto_trader"]["trade_log"]
-        if not trades:
-            st.info("No trades yet. Auto‑trader or backtest must generate trades.")
+        stats = compute_trade_stats(st.session_state["auto_trader"]["trade_log"])
+        if not stats:
+            st.write("No closed trades yet.")
         else:
-            stats = compute_trade_stats(trades)
-            st.write("### Trade Statistics")
-            st.write(stats)
-            fig_eq = simulate_equity_curve(trades)
-            if fig_eq:
-                st.plotly_chart(fig_eq, use_container_width=True)
-            st.write("### Trade Log")
-            st.dataframe(pd.DataFrame(trades), use_container_width=True)
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Win Rate", f"{stats['WinRate']:.1f}%")
+            col2.metric("Profit Factor", f"{stats['ProfitFactor']:.2f}")
+            col3.metric("Max Drawdown", f"{stats['MaxDrawdown']:.0f}")
+
+            col4, col5 = st.columns(2)
+            col4.metric("Sharpe", f"{stats['Sharpe']:.2f}")
+            col5.metric("Sortino", f"{stats['Sortino']:.2f}")
+
+            eq_fig = simulate_equity_curve(st.session_state["auto_trader"]["trade_log"])
+            if eq_fig:
+                st.plotly_chart(eq_fig, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     # ========================================================
-    # AUTO-TRADER DASHBOARD
+    # AUTO-TRADER TAB
     # ========================================================
     with tab_autotrader:
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.subheader("Auto‑Trader Dashboard")
-        st.write("### Open Positions")
-        st.write(st.session_state["auto_trader"]["positions"])
-        st.write("### Trade Log")
+        st.subheader("Auto‑Trader (Simulation)")
+        st.write("Positions:")
+        st.json(st.session_state["auto_trader"]["positions"])
+        st.write("Trade Log:")
         st.dataframe(pd.DataFrame(st.session_state["auto_trader"]["trade_log"]), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
-
 
 if __name__ == "__main__":
     main()
