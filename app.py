@@ -383,6 +383,7 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
         showlegend=True,
         margin=dict(l=10, r=10, t=40, b=10)
     )
+xaxis=dict(domain=[0, 1], rangeslider=dict(visible=False)),
 
     return fig
 # ============================================================
