@@ -1,168 +1,121 @@
-import numpy as np
-import pandas as pd
 import streamlit as st
 import yfinance as yf
+import pandas_ta as ta
+import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
-from datetime import date, timedelta
+from plotly.subplots import make_subplots
+from datetime import datetime
 
-# ============================
-# 1. TECHNICAL INDICATORS
-# ============================
-def ema(series, length):
-    return series.ewm(span=length, adjust=False).mean()
+# ── 1. TERMINAL CONFIG ──────────────────────────────────────────
+st.set_page_config(page_title="Sniper Terminal v3.5", layout="wide")
 
-def rsi(series, length=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    gain_ema = gain.ewm(span=length, adjust=False).mean()
-    loss_ema = loss.ewm(span=length, adjust=False).mean()
-    rs = gain_ema / loss_ema
-    return 100 - (100 / (1 + rs))
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@800&display=swap');
+:root { --bg: #06070a; --accent: #2962ff; --green: #00e676; --red: #ff3d5a; }
+html, body, [class*="css"] { background-color: var(--bg) !important; font-family: 'JetBrains Mono', monospace !important; }
+[data-testid="stMetric"] { background: #0e1117 !important; border: 1px solid #1f2436 !important; border-radius: 8px !important; }
+.verdict { padding: 12px; border-radius: 4px; text-align: center; font-weight: 800; border: 1px solid; margin-bottom: 20px; }
+.bull-v { background: rgba(0,230,118,0.1); color: #00e676; border-color: #00e676; }
+.wait-v { background: rgba(209,212,220,0.05); color: #d1d4dc; border-color: #363c4e; }
+</style>
+""", unsafe_allow_html=True)
 
-def atr(df, length=14):
-    high, low, close = df['High'], df['Low'], df['Close']
-    tr1 = high - low
-    tr2 = (high - close.shift()).abs()
-    tr3 = (low - close.shift()).abs()
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    return tr.ewm(span=length, adjust=False).mean()
+# ── 2. ADVANCED DIVERGENCE ENGINE ───────────────────────────────
+def get_pivots(series, window=5):
+    """Finds local peaks and troughs for line drawing."""
+    p_highs = []
+    p_lows = []
+    for i in range(window, len(series) - window):
+        chunk = series.iloc[i-window : i+window+1]
+        if series.iloc[i] == chunk.max(): p_highs.append(i)
+        if series.iloc[i] == chunk.min(): p_lows.append(i)
+    return p_highs, p_lows
 
-def avwap(df):
-    typical_price = (df['High'] + df['Low'] + df['Close']) / 3
-    cumulative_tp_vol = (typical_price * df['Volume']).cumsum()
-    cumulative_vol = df['Volume'].cumsum()
-    return cumulative_tp_vol / cumulative_vol
+def calc_div_lines(df, window=5):
+    bull_lines, bear_lines = [], []
+    # Using Close for divergence comparison
+    p_highs, p_lows = get_pivots(df['Close'], window)
+    r_highs, r_lows = get_pivots(df['RSI'], window)
 
-# ============================
-# 2. DIVERGENCE ENGINE
-# ============================
-def detect_strict_swing_lows(df):
-    lows = df['Low'].values
-    swing_low = np.zeros(len(df), dtype=bool)
-    for i in range(2, len(df) - 2):
-        if (lows[i] < lows[i-1] and lows[i] < lows[i-2] and
-            lows[i] < lows[i+1] and lows[i] < lows[i+2]):
-            swing_low[i] = True
-    return swing_low
+    # Bullish Divergence: Price Lower Low, RSI Higher Low
+    for k in range(1, len(p_lows)):
+        i1, i2 = p_lows[k-1], p_lows[k]
+        # Ensure price is actually making a lower low
+        if df['Close'].iloc[i2] < df['Close'].iloc[i1] and df['RSI'].iloc[i2] > df['RSI'].iloc[i1]:
+            if df['RSI'].iloc[i2] < 45: # Filter for 'Value Area'
+                bull_lines.append(((df.index[i1], df['Close'].iloc[i1]), (df.index[i2], df['Close'].iloc[i2]), 'price'))
+                bull_lines.append(((df.index[i1], df['RSI'].iloc[i1]), (df.index[i2], df['RSI'].iloc[i2]), 'rsi'))
+    return bull_lines, bear_lines
 
-def detect_rsi_bullish_divergence(df, swing_low_mask):
-    divergence_points = []
-    lows, rsi_vals = df['Low'].values, df['RSI'].values
-    swing_indices = np.where(swing_low_mask)[0]
-    for i in range(1, len(swing_indices)):
-        i1, i2 = swing_indices[i-1], swing_indices[i]
-        if lows[i2] < lows[i1] and rsi_vals[i2] > rsi_vals[i1]:
-            divergence_points.append((int(i1), int(i2)))
-    return divergence_points
+# ── 3. SIDEBAR & DATA ───────────────────────────────────────────
+with st.sidebar:
+    st.markdown("## 🏹 SNIPER OPS")
+    ticker = st.text_input("Active Target", value="HAL.NS").upper()
+    tf_opts = {"Daily": "1d", "Weekly": "1wk", "1 Hour": "1h"}
+    interval = tf_opts[st.sidebar.selectbox("Timeframe", list(tf_opts.keys()), index=0)]
+    risk_amt = st.sidebar.number_input("Unit Risk (₹)", value=2000)
 
-def apply_divergence_engine(df):
-    df['EMA200'] = ema(df['Close'], 200)
-    df['RSI'] = rsi(df['Close'])
-    df['ATR'] = atr(df)
-    df['AVWAP'] = avwap(df)
-    
-    swing_mask = detect_strict_swing_lows(df)
-    df['SwingLow'] = swing_mask
-    div_pairs = detect_rsi_bullish_divergence(df, swing_mask)
-    
-    # Generate visualization lines
-    df['Div_Arrow'] = np.nan
-    df['Div_Line_Price'] = np.nan
-    df['Div_Line_RSI'] = np.nan
-    for (i1, i2) in div_pairs:
-        df.iloc[i2, df.columns.get_loc('Div_Arrow')] = df['Low'].iloc[i2] * 0.995
-        df.iloc[i1:i2+1, df.columns.get_loc('Div_Line_Price')] = np.linspace(df['Low'].iloc[i1], df['Low'].iloc[i2], i2-i1+1)
-        df.iloc[i1:i2+1, df.columns.get_loc('Div_Line_RSI')] = np.linspace(df['RSI'].iloc[i1], df['RSI'].iloc[i2], i2-i1+1)
-    return df, div_pairs
-
-# ============================
-# 3. BACKTEST ENGINE
-# ============================
-def run_backtest(df, divergence_pairs, risk_per_trade=2000):
-    df = df.copy().reset_index(drop=False).reset_index(drop=True)
-    trades, equity = [], 0
-
-    for (_, i2) in divergence_pairs:
-        entry_idx = i2 + 1
-        if entry_idx >= len(df): continue
-
-        # A++ Setup Filters
-        open_n = float(df['Open'].iloc[entry_idx])
-        if open_n < df['EMA200'].iloc[entry_idx] or open_n < df['AVWAP'].iloc[entry_idx]:
-            continue
-
-        atr_v = float(df['ATR'].iloc[entry_idx])
-        sl_price = open_n - (1.5 * atr_v)
-        tp_price = open_n + (2 * atr_v)
-        qty = max(int(risk_per_trade / (open_n - sl_price)), 1)
-
-        exit_p, exit_idx = None, None
-        for j in range(entry_idx + 1, len(df)):
-            if float(df['Low'].iloc[j]) <= sl_price:
-                exit_p, exit_idx = sl_price, j
-                break
-            if float(df['High'].iloc[j]) >= tp_price:
-                exit_p, exit_idx = tp_price, j
-                break
+if ticker:
+    try:
+        df = yf.download(ticker, period="max" if interval in ["1d", "1wk"] else "60d", interval=interval, progress=False, auto_adjust=True)
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         
-        if exit_p is None:
-            exit_p, exit_idx = float(df['Close'].iloc[-1]), len(df)-1
+        df['EMA200'] = ta.ema(df['Close'], length=200)
+        df['RSI'] = ta.rsi(df['Close'], length=14)
+        df.dropna(subset=['RSI'], inplace=True)
+        bull_lines, _ = calc_div_lines(df)
 
-        pnl = (exit_p - open_n) * qty
-        equity += pnl
-        trades.append({
-            "Entry": df['Date'].iloc[entry_idx] if 'Date' in df else df['index'].iloc[entry_idx],
-            "Exit": df['Date'].iloc[exit_idx] if 'Date' in df else df['index'].iloc[exit_idx],
-            "EntryPrice": open_n, "ExitPrice": exit_p, "Qty": qty, "PnL": pnl, "Equity": equity
-        })
-    return trades, equity
+        # AVWAP
+        top_idx, bot_idx = df['High'].argmax(), df['Low'].argmin()
+        def av(idx):
+            tmp = df.iloc[idx:].copy()
+            return (tmp['Close'] * tmp['Volume']).cumsum() / tmp['Volume'].cumsum()
+        df['AVWAP_H'], df['AVWAP_L'] = av(top_idx), av(bot_idx)
 
-# ============================
-# 4. STREAMLIT UI
-# ============================
-def main():
-    st.set_page_config(page_title="Sniper Terminal – Ankesh", layout="wide")
-    st.title("Sniper Terminal – Ankesh")
-    
-    with st.sidebar:
-        st.header("Settings")
-        ticker = st.text_input("Ticker", value="HAL.NS")
-        interval = st.selectbox("Timeframe", ["1d", "1h", "15m"], index=0)
-        risk_per_trade = st.number_input("Risk per Trade (₹)", value=2000)
-        years = st.slider("Years of Data", 1, 5, 2)
-        run_btn = st.button("Run Backtest", type="primary")
+        # ── 4. UI HUD ──────────────────────────────────────────
+        curr = df.iloc[-1]
+        is_setup = curr['Close'] > curr['EMA200'] and curr['RSI'] < 40
+        verdict_cls = "bull-v" if is_setup else "wait-v"
+        verdict_txt = "🎯 A++ SNIPER SETUP DETECTED" if is_setup else "MONITORING STRUCTURE"
+        st.markdown(f'<div class="verdict {verdict_cls}">{verdict_txt}</div>', unsafe_allow_html=True)
 
-    if run_btn:
-        end_date = date.today()
-        start_date = end_date - timedelta(days=365 * years)
-        df = yf.download(ticker, start=start_date, end=end_date, interval=interval, auto_adjust=True)
+        c1, c2, c3, c4 = st.columns(4)
+        diff = curr['Close'] - curr['Low']
+        qty = int(risk_amt / diff) if diff > 0 else 0
+        c1.metric("Price", f"₹{curr['Close']:,.2f}")
+        c2.metric("Sniper Qty", f"{qty}")
+        c3.metric("Stop Loss", f"₹{curr['Low']:,.2f}")
+        c4.metric("RSI", f"{curr['RSI']:.1f}")
+
+        # ── 5. MASTER CHART ────────────────────────────────────
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
         
-        if not df.empty:
-            if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-            df, div_pairs = apply_divergence_engine(df)
-            trades, _ = run_backtest(df, div_pairs, risk_per_trade)
-            trades_df = pd.DataFrame(trades)
+        # Price Panel
+        fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['EMA200'], line=dict(color='#2962ff', width=1, dash='dot'), name="EMA 200"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['AVWAP_L'], line=dict(color='#00e676', width=1.5), name="Support"), row=1, col=1)
+        
+        # RSI Panel
+        fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#00d1ff', width=2), name="RSI"), row=2, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color="#ff3d5a", row=2, col=1, opacity=0.3)
+        fig.add_hline(y=30, line_dash="dash", line_color="#00e676", row=2, col=1, opacity=0.3)
 
-            # --- PLOTTING ---
-            fig = go.Figure()
-            fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"))
-            fig.add_trace(go.Scatter(x=df.index, y=df['EMA200'], name='EMA200', line=dict(color='orange', width=1)))
-            fig.add_trace(go.Scatter(x=df.index, y=df['AVWAP'], name='AVWAP', line=dict(color='purple', width=1)))
-            fig.add_trace(go.Scatter(x=df.index, y=df['Div_Line_Price'], name='Bull Div', line=dict(color='lime', width=1, dash='dot')))
-            
-            fig.update_layout(height=600, template="plotly_dark", xaxis_rangeslider_visible=False)
-            st.plotly_chart(fig, use_container_width=True)
+        # DRAW DIVERGENCE LINES
+        for line in bull_lines:
+            # line format: ((x1, y1), (x2, y2), type)
+            target_row = 1 if line[2] == 'price' else 2
+            fig.add_trace(go.Scatter(
+                x=[line[0][0], line[1][0]], y=[line[0][1], line[1][1]],
+                mode='lines+markers', line=dict(color='#00e676', width=3),
+                marker=dict(size=6), showlegend=False
+            ), row=target_row, col=1)
 
-            # Metrics
-            if not trades_df.empty:
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Win Rate", f"{(trades_df['PnL'] > 0).mean()*100:.1f}%")
-                c2.metric("Net PnL", f"₹{trades_df['PnL'].sum():,.0f}")
-                c3.metric("Total Trades", len(trades_df))
-                st.dataframe(trades_df, use_container_width=True)
-            else:
-                st.info("No trades found matching A++ criteria in this period.")
+        fig.update_layout(template="plotly_dark", height=800, xaxis_rangeslider_visible=False, margin=dict(l=0, r=50, b=0, t=10), paper_bgcolor="#06070a", plot_bgcolor="#06070a")
+        fig.update_xaxes(range=[df.index[-100], df.index[-1]], gridcolor="#13161f")
+        fig.update_yaxes(side="right", gridcolor="#13161f")
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-if __name__ == "__main__":
-    main()
+    except Exception as e:
+        st.info("Structure mapping in progress...")
