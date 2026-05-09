@@ -121,7 +121,7 @@ def apply_divergence_engine(df):
     return df, div_pairs
 
 # ============================
-# 9. CLEAN BACKTEST ENGINE (FINAL)
+# 9. CLEAN BACKTEST ENGINE (FIXED)
 # ============================
 def run_backtest(df, divergence_pairs, risk_per_trade=2000):
     df = df.copy()
@@ -136,24 +136,22 @@ def run_backtest(df, divergence_pairs, risk_per_trade=2000):
         if entry_index >= len(df):
             continue
 
-        open_next = df['Open'].iloc[entry_index]
-        ema_val = df['EMA200'].iloc[entry_index]
-        avwap_val = df['AVWAP'].iloc[entry_index]
-        atr_val = df['ATR'].iloc[entry_index]
+        open_next = float(df['Open'].iloc[entry_index])
+        ema_val = float(df['EMA200'].iloc[entry_index])
+        avwap_val = float(df['AVWAP'].iloc[entry_index])
+        atr_val = float(df['ATR'].iloc[entry_index])
 
-        if pd.isna(open_next) or pd.isna(ema_val) or pd.isna(avwap_val) or pd.isna(atr_val):
+        if atr_val <= 0:
             continue
-
         if open_next < ema_val:
             continue
         if open_next < avwap_val:
-            continue
-        if atr_val <= 0:
             continue
 
         sl_distance = 1.5 * atr_val
         sl_price = open_next - sl_distance
 
+        # skip trade if gap below SL
         if open_next < sl_price:
             continue
 
@@ -164,11 +162,8 @@ def run_backtest(df, divergence_pairs, risk_per_trade=2000):
         exit_index = None
 
         for j in range(entry_index + 1, len(df)):
-            low_j = df['Low'].iloc[j]
-            high_j = df['High'].iloc[j]
-
-            if pd.isna(low_j) or pd.isna(high_j):
-                continue
+            low_j = float(df['Low'].iloc[j])
+            high_j = float(df['High'].iloc[j])
 
             if low_j <= sl_price:
                 exit_price = sl_price
@@ -181,7 +176,7 @@ def run_backtest(df, divergence_pairs, risk_per_trade=2000):
                 break
 
         if exit_price is None:
-            exit_price = df['Close'].iloc[-1]
+            exit_price = float(df['Close'].iloc[-1])
             exit_index = len(df) - 1
 
         pnl = (exit_price - open_next) * qty
