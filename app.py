@@ -139,7 +139,7 @@ def scan_stock(ticker, interval, use_trend, fresh_only):
 
         i1, i2 = divs[-1]
 
-        # Fresh divergence filter
+        # ⭐ Fresh divergence filter
         if fresh_only and i2 < len(df)-3:
             return None
 
@@ -168,12 +168,11 @@ def scan_stock(ticker, interval, use_trend, fresh_only):
         return None
 
 # ============================================================
-# ULTRA-PRO PLOTLY CHART (FULL SCREEN MODAL)
+# ULTRA-PRO PLOTLY CHART
 # ============================================================
 def plot_ultra_pro_chart(df, i1, i2, trend_series):
     fig = go.Figure()
 
-    # Candles
     fig.add_trace(go.Candlestick(
         x=df.index,
         open=df["Open"], high=df["High"],
@@ -181,21 +180,18 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
         name="Price"
     ))
 
-    # EMA200
     fig.add_trace(go.Scatter(
         x=df.index, y=df["EMA200"],
         mode="lines", line=dict(color="orange", width=1.5),
         name="EMA200"
     ))
 
-    # AVWAP
     fig.add_trace(go.Scatter(
         x=df.index, y=df["AVWAP"],
         mode="lines", line=dict(color="purple", width=1.5),
         name="AVWAP"
     ))
 
-    # Divergence markers
     fig.add_trace(go.Scatter(
         x=[df.index[i1], df.index[i2]],
         y=[df["Low"].iloc[i1], df["Low"].iloc[i2]],
@@ -205,7 +201,6 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
         name="Bullish Divergence"
     ))
 
-    # Volume
     fig.add_trace(go.Bar(
         x=df.index, y=df["Volume"],
         marker_color="rgba(0,150,255,0.3)",
@@ -213,7 +208,6 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
         yaxis="y2"
     ))
 
-    # Weekly Trend Ribbon
     if trend_series is not None:
         trend_series = trend_series.reindex(df.index, method="ffill")
         ribbon_color = ["green" if bool(v) else "gray" for v in trend_series]
@@ -391,4 +385,7 @@ def main():
         use_trend_bt = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True, key="trend_filter_bt")
 
         if st.button("Run Backtest", key="run_backtest_btn"):
-           
+            end = date.today()
+            start = end - timedelta(days=365*years)
+
+            df = yf.download(ticker, start=start, end=end, interval=interval_b, auto_adjust=True, progress=False
