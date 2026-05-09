@@ -149,6 +149,7 @@ def scan_stock(ticker, interval, use_trend, fresh_only):
         }
     except:
         return None
+
 # ============================================================
 # ULTRA-PRO PLOTLY CHART
 # ============================================================
@@ -224,7 +225,6 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
 
     return fig
 
-
 # ============================================================
 # BACKTEST ENGINE
 # ============================================================
@@ -299,6 +299,7 @@ def run_backtest(df, divs, risk, trend_series, use_trend):
         })
 
     return trades, equity
+
 # ============================================================
 # STREAMLIT UI
 # ============================================================
@@ -315,22 +316,31 @@ def main():
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            universe = st.selectbox("Universe", ["NIFTY200", "Custom"])
+            universe = st.selectbox("Universe", ["NIFTY200", "Custom"], key="universe_sel")
         with col2:
             interval_s = st.selectbox("Timeframe", ["1d", "1h", "15m"], key="screener_tf")
         with col3:
-            mode = st.selectbox("View Mode", ["Simple", "Detailed"])
+            mode = st.selectbox("View Mode", ["Simple", "Detailed"], key="view_mode_sel")
 
-        use_trend = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True)
-        fresh_only = st.checkbox("Show Only Fresh Divergences (Last 3 Candles)", value=True)
+        use_trend = st.checkbox(
+            "Use Weekly Trend Filter (EMA200 + RSI>50)",
+            value=True,
+            key="trend_filter_screener"
+        )
+
+        fresh_only = st.checkbox(
+            "Show Only Fresh Divergences (Last 3 Candles)",
+            value=True,
+            key="fresh_only_toggle"
+        )
 
         if universe == "Custom":
-            custom = st.text_input("Enter tickers", "HAL.NS")
+            custom = st.text_input("Enter tickers", "HAL.NS", key="custom_tickers")
             tickers = [x.strip() for x in custom.split(",") if x.strip()]
         else:
             tickers = NIFTY200
 
-        if st.button("Run Screener"):
+        if st.button("Run Screener", key="run_screener_btn"):
             st.info("Scanning…")
 
             results = []
@@ -345,11 +355,18 @@ def main():
                 df_res = pd.DataFrame(results).sort_values("Strength", ascending=False)
 
                 if mode == "Simple":
-                    st.dataframe(df_res[["Ticker", "SignalDate", "Strength"]], use_container_width=True)
+                    st.dataframe(
+                        df_res[["Ticker", "SignalDate", "Strength"]],
+                        use_container_width=True
+                    )
                 else:
                     st.dataframe(df_res, use_container_width=True)
 
-                selected = st.selectbox("Select a ticker to view chart", df_res["Ticker"])
+                selected = st.selectbox(
+                    "Select a ticker to view chart",
+                    df_res["Ticker"],
+                    key="chart_ticker_select"
+                )
 
                 if selected:
                     row = df_res[df_res["Ticker"] == selected].iloc[0]
@@ -377,20 +394,24 @@ def main():
                         fig = plot_ultra_pro_chart(df, i1, i2, df.get("TrendW"))
                         st.plotly_chart(fig, use_container_width=True)
 
-    # ============================================================
+      # ============================================================
     # BACKTEST TAB
     # ============================================================
     with tab_backtest:
         st.title("Sniper Backtester")
 
-        ticker = st.text_input("Ticker", "HAL.NS")
+        ticker = st.text_input("Ticker", "HAL.NS", key="bt_ticker")
         interval_b = st.selectbox("Timeframe", ["1d", "1h", "15m"], key="backtest_tf")
+        risk = st.number_input("Risk per Trade (₹)", value=2000, key="bt_risk")
+        years = st.slider("Years of Data", 1, 5, 2, key="bt_years")
 
-        risk = st.number_input("Risk per Trade (₹)", value=2000)
-        years = st.slider("Years of Data", 1, 5, 2)
-        use_trend_bt = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True)
+        use_trend_bt = st.checkbox(
+            "Use Weekly Trend Filter (EMA200 + RSI>50)",
+            value=True,
+            key="trend_filter_backtest"
+        )
 
-        if st.button("Run Backtest"):
+        if st.button("Run Backtest", key="run_backtest_btn"):
             end = date.today()
             start = end - timedelta(days=365 * years)
 
@@ -433,3 +454,4 @@ def main():
 # ============================================================
 if __name__ == "__main__":
     main()
+
