@@ -204,7 +204,7 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
         name="Bullish Divergence"
     ))
 
-    # Volume
+    # Volume (secondary y)
     fig.add_trace(go.Bar(
         x=df.index, y=df["Volume"],
         marker_color="rgba(0,150,255,0.3)",
@@ -212,25 +212,26 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
         yaxis="y2"
     ))
 
-    # Weekly Trend Ribbon
+    # Weekly Trend Ribbon (bottom bar)
     if trend_series is not None:
-        ribbon_color = ["green" if v else "gray" for v in trend_series]
+        trend_series = trend_series.reindex(df.index, method="ffill")
+        ribbon_color = ["green" if bool(v) else "gray" for v in trend_series]
         fig.add_trace(go.Bar(
             x=df.index,
-            y=[df["Low"].min()*0 for _ in df.index],
+            y=[df["Low"].min()*0.0 + 0.0001 for _ in df.index],
             marker_color=ribbon_color,
             name="Weekly Trend",
             yaxis="y3"
         ))
 
-    # Layout
     fig.update_layout(
         height=900,
         xaxis=dict(domain=[0,1]),
         yaxis=dict(title="Price", side="right"),
-        yaxis2=dict(title="Volume", overlaying="y", side="left", showgrid=False),
+        yaxis2=dict(title="Volume", overlaying="y", side="left", showgrid=False, rangemode="tozero"),
         yaxis3=dict(overlaying="y", side="right", showticklabels=False),
-        showlegend=True
+        showlegend=True,
+        margin=dict(l=10, r=10, t=40, b=10)
     )
 
     return fig
@@ -269,6 +270,8 @@ def run_backtest(df, divs, risk, trend_series, use_trend):
         sl = open_n - 1.5*atr_v
         tp = open_n + 2*atr_v
         risk_per_share = open_n - sl
+        if risk_per_share <= 0:
+            continue
         qty = max(int(risk / risk_per_share), 1)
 
         exit_p, exit_idx = None, None
@@ -314,21 +317,21 @@ def main():
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            universe = st.selectbox("Universe", ["NIFTY200", "Custom"])
+            universe = st.selectbox("Universe", ["NIFTY200", "Custom"], key="universe_sel")
         with col2:
-            interval_s = st.selectbox("Timeframe", ["1d", "1h", "15m"])
+            interval_s = st.selectbox("Timeframe", ["1d", "1h", "15m"], key="screener_tf")
         with col3:
-            mode = st.selectbox("View Mode", ["Simple", "Detailed"])
+            mode = st.selectbox("View Mode", ["Simple", "Detailed"], key="view_mode_sel")
 
-        use_trend = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True)
+        use_trend = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True, key="trend_filter_screener")
 
         if universe == "Custom":
-            custom = st.text_input("Enter tickers", "HAL.NS, TCS.NS")
+            custom = st.text_input("Enter tickers", "HAL.NS, TCS.NS", key="custom_tickers")
             tickers = [x.strip() for x in custom.split(",") if x.strip()]
         else:
             tickers = NIFTY200
 
-        if st.button("Run Screener"):
+        if st.button("Run Screener", key="run_screener_btn"):
             st.info("Scanning…")
 
             results = []
@@ -342,26 +345,32 @@ def main():
             else:
                 df_res = pd.DataFrame(results).sort_values("Strength", ascending=False)
 
-                st.dataframe(df_res, use_container_width=True)
+                if mode == "Simple":
+                    st.dataframe(df_res[["Ticker", "SignalDate", "Strength"]], use_container_width=True)
+                else:
+                    st.dataframe(df_res, use_container_width=True)
 
-                # Chart-on-click
-                selected = st.selectbox("Select a ticker to view chart", df_res["Ticker"])
+                selected = st.selectbox(
+                    "Select a ticker to view chart",
+                    df_res["Ticker"],
+                    key="chart_ticker_select"
+                )
 
                 if selected:
                     row = df_res[df_res["Ticker"] == selected].iloc[0]
                     ticker = row["Ticker"]
-                    i1, i2 = row["i1"], row["i2"]
+                    i1, i2 = int(row["i1"]), int(row["i2"])
 
                     df = yf.download(ticker, period="1y", interval=interval_s, auto_adjust=True, progress=False)
                     if isinstance(df.columns, pd.MultiIndex):
                         df.columns = df.columns.get_level_values(0)
+                    df, _ = apply_divergence_engine(df)
 
-                    df, divs = apply_divergence_engine(df)
                     trend_series = get_weekly_trend(ticker)
                     if trend_series is not None:
                         df["TrendW"] = trend_series.reindex(df.index, method="ffill")
 
-                    with st.modal("📈 Full-Screen Chart", width=2000):
+                    with st.modal(f"📈 Full-Screen Chart – {ticker}", key="full_screen_chart_modal"):
                         fig = plot_ultra_pro_chart(df, i1, i2, df.get("TrendW"))
                         st.plotly_chart(fig, use_container_width=True)
 
@@ -371,17 +380,21 @@ def main():
     with tab_backtest:
         st.title("Sniper Backtester")
 
-        ticker = st.text_input("Ticker", "HAL.NS")
-        interval_b = st.selectbox("Timeframe", ["1d", "1h", "15m"])
-        risk = st.number_input("Risk per Trade (₹)", value=2000)
-        years = st.slider("Years of Data", 1, 5, 2)
-        use_trend_bt = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True)
+        ticker = st.text_input("Ticker", "HAL.NS", key="bt_ticker")
+        interval_b = st.selectbox("Timeframe", ["1d", "1h", "15m"], key="backtest_tf")
+        risk = st.number_input("Risk per Trade (₹)", value=2000, key="bt_risk")
+        years = st.slider("Years of Data", 1, 5, 2, key="bt_years")
+        use_trend_bt = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True, key="trend_filter_bt")
 
-        if st.button("Run Backtest"):
+        if st.button("Run Backtest", key="run_backtest_btn"):
             end = date.today()
             start = end - timedelta(days=365*years)
 
             df = yf.download(ticker, start=start, end=end, interval=interval_b, auto_adjust=True, progress=False)
+            if df.empty:
+                st.error("No data.")
+                return
+
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
