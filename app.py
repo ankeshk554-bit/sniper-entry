@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import yfinance as yf
-import plotly.graph_objects as go
 from datetime import date, timedelta
 
 # ============================================================
@@ -54,6 +53,20 @@ def avwap(df):
     return cumulative_tp_vol / cumulative_vol
 
 # ============================================================
+# WEEKLY TREND FILTER (EMA200 + RSI>50)
+# ============================================================
+def get_weekly_trend(ticker):
+    df_w = yf.download(ticker, period="5y", interval="1wk", auto_adjust=True, progress=False)
+    if df_w.empty:
+        return None
+
+    df_w["EMA200"] = ema(df_w["Close"], 200)
+    df_w["RSI"] = rsi(df_w["Close"])
+    df_w["TrendW"] = (df_w["Close"] > df_w["EMA200"]) & (df_w["RSI"] > 50)
+
+    return df_w["TrendW"]
+
+# ============================================================
 # DIVERGENCE ENGINE
 # ============================================================
 def detect_strict_swing_lows(df):
@@ -79,10 +92,10 @@ def detect_rsi_bullish_divergence(df, swing_low_mask):
 
 def apply_divergence_engine(df):
     df = df.copy()
-    df['EMA200'] = ema(df['Close'], 200)
-    df['RSI'] = rsi(df['Close'])
-    df['ATR'] = atr(df)
-    df['AVWAP'] = avwap(df)
+    df["EMA200"] = ema(df["Close"], 200)
+    df["RSI"] = rsi(df["Close"])
+    df["ATR"] = atr(df)
+    df["AVWAP"] = avwap(df)
     swing_mask = detect_strict_swing_lows(df)
     div_pairs = detect_rsi_bullish_divergence(df, swing_mask)
     return df, div_pairs
@@ -105,9 +118,9 @@ def compute_strength(df, i1, i2):
     return round(score, 2)
 
 # ============================================================
-# FRESH DIVERGENCE SCREENER
+# FRESH DIVERGENCE SCREENER + WEEKLY TREND FILTER
 # ============================================================
-def scan_stock(ticker, interval):
+def scan_stock(ticker, interval, use_trend):
     try:
         df = yf.download(ticker, period="1y", interval=interval, auto_adjust=True, progress=False)
         if df.empty:
@@ -120,10 +133,21 @@ def scan_stock(ticker, interval):
         if not div_pairs:
             return None
 
+        # Weekly trend
+        if use_trend:
+            trend_w = get_weekly_trend(ticker)
+            if trend_w is None:
+                return None
+            df["TrendW"] = trend_w.reindex(df.index, method="ffill")
+
         i1, i2 = div_pairs[-1]
 
         # Fresh divergence = last 3 candles
         if i2 < len(df) - 3:
+            return None
+
+        # Weekly trend filter at divergence candle
+        if use_trend and not bool(df["TrendW"].iloc[i2]):
             return None
 
         # A++ filters
@@ -154,16 +178,23 @@ def scan_stock(ticker, interval):
         return None
 
 # ============================================================
-# BACKTEST ENGINE
+# BACKTEST ENGINE + WEEKLY TREND FILTER
 # ============================================================
-def run_backtest(df, div_pairs, risk_per_trade=2000):
+def run_backtest(df, div_pairs, risk_per_trade, trend_series, use_trend):
     df = df.copy()
     df.index.name = "Timestamp"
     df = df.reset_index().reset_index(drop=True)
 
+    if use_trend:
+        df["TrendW"] = trend_series.reindex(df["Timestamp"], method="ffill")
+
     trades, equity = [], 0
 
     for (_, i2) in div_pairs:
+        # Weekly trend filter at divergence candle
+        if use_trend and not bool(df["TrendW"].iloc[i2]):
+            continue
+
         entry_idx = i2 + 1
         if entry_idx >= len(df):
             continue
@@ -241,6 +272,8 @@ def main():
         with col3:
             mode = st.selectbox("View Mode", ["Simple", "Detailed"], key="view_mode")
 
+        use_trend = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True, key="trend_filter")
+
         if universe == "Custom":
             custom = st.text_input("Enter tickers (comma separated)", "HAL.NS, TCS.NS", key="custom_list")
             tickers = [x.strip() for x in custom.split(",") if x.strip()]
@@ -252,7 +285,7 @@ def main():
 
             results = []
             for t in tickers:
-                r = scan_stock(t, interval_s)
+                r = scan_stock(t, interval_s, use_trend)
                 if r:
                     results.append(r)
 
@@ -277,6 +310,8 @@ def main():
         risk_per_trade = st.number_input("Risk per Trade (₹)", value=2000, key="bt_risk")
         years = st.slider("Years of Data", 1, 5, 2, key="bt_years")
 
+        use_trend_bt = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True, key="trend_filter_bt")
+
         if st.button("Run Backtest", key="run_backtest"):
             end_date = date.today()
             start_date = end_date - timedelta(days=365 * years)
@@ -294,11 +329,9 @@ def main():
                 st.error("No data.")
                 return
 
-            # Flatten MultiIndex columns if present
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
-            # SAFE numeric conversion (no errors)
             for col in df.columns:
                 try:
                     df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -306,7 +339,12 @@ def main():
                     pass
 
             df, div_pairs = apply_divergence_engine(df)
-            trades, _ = run_backtest(df, div_pairs, risk_per_trade)
+
+            trend_series = None
+            if use_trend_bt:
+                trend_series = get_weekly_trend(ticker)
+
+            trades, _ = run_backtest(df, div_pairs, risk_per_trade, trend_series, use_trend_bt)
             trades_df = pd.DataFrame(trades)
 
             if trades_df.empty:
