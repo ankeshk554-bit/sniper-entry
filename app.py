@@ -23,7 +23,7 @@ st.markdown("""
 
 :root {
     --bg0:      #08090d;
-    --bg1:      #0e1018;
+    --bg1:      #00e676;
     --bg2:      #13161f;
     --bg3:      #1a1e2a;
     --border:   #1f2436;
@@ -84,7 +84,7 @@ with st.sidebar:
         <div style='font-family:Syne,sans-serif;font-size:1.1rem;font-weight:800;color:white;letter-spacing:0.04em'>
             ⚡ SNIPER <span style='color:#4f6ef7'>TERMINAL</span>
         </div>
-        <div style='font-size:0.6rem;color:#505872;letter-spacing:0.12em;margin-top:2px'>SWING ENGINE v2.3</div>
+        <div style='font-size:0.6rem;color:#505872;letter-spacing:0.12em;margin-top:2px'>SWING ENGINE v3.0</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -103,7 +103,7 @@ with st.sidebar:
     st.markdown(f"<div>{chips_html}</div>", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# INDICATOR HELPERS (FAST, SERIES‑SAFE)
+# INDICATOR HELPERS
 # ─────────────────────────────────────────────
 def ema(series, span):
     series = pd.Series(series)
@@ -117,8 +117,23 @@ def rsi(series, length=14):
     avg_gain = gain.rolling(length).mean()
     avg_loss = loss.rolling(length).mean()
     rs = avg_gain / avg_loss
-    rsi_val = 100 - (100 / (1 + rs))
-    return rsi_val
+    return 100 - (100 / (1 + rs))
+
+def atr(df, length=14):
+    high = df['High']
+    low = df['Low']
+    close = df['Close']
+
+    prev_close = close.shift(1)
+
+    tr = pd.concat([
+        (high - low),
+        (high - prev_close).abs(),
+        (low - prev_close).abs()
+    ], axis=1).max(axis=1)
+
+    atr_val = tr.ewm(alpha=1/length, adjust=False).mean()
+    return atr_val
 
 def fast_avwap(df, start_idx):
     c = df['Close'].values[start_idx:]
@@ -129,38 +144,20 @@ def fast_avwap(df, start_idx):
     out[start_idx:] = cv / vv
     return out
 
-# ─────────────────────────────────────────────
-# WEEKLY TREND FROM DAILY DATA (NO ALIGN ISSUES)
-# ─────────────────────────────────────────────
-def compute_weekly_trend_from_daily(df):
-    """
-    Build weekly close from daily data via resample,
-    compute weekly EMA200, then map back to daily.
-    """
-    # Ensure DateTimeIndex
-    df = df.copy()
-    df = df.sort_index()
-
+def compute_weekly_trend(df):
     weekly_close = df['Close'].resample('W-FRI').last()
     weekly_ema200 = ema(weekly_close, 200)
     weekly_trend = weekly_close > weekly_ema200
-
-    # Map weekly trend back to daily via forward‑fill
-    trend_w_daily = weekly_trend.reindex(df.index, method='ffill')
-    trend_w_daily = trend_w_daily.fillna(False)
-
-    return trend_w_daily
+    return weekly_trend.reindex(df.index, method='ffill').fillna(False)
 
 # ─────────────────────────────────────────────
-# BACKTEST ENGINE
+# BACKTEST ENGINE (ATR‑BASED)
 # ─────────────────────────────────────────────
 def run_backtest(df, risk_per_trade=2000, use_mtf=True):
     df = df.copy()
 
-    # Daily trend
     df['Trend'] = df['Close'] > df['EMA200']
 
-    # Entry condition
     if use_mtf:
         df['Entry'] = (
             (df['RSI'] < 32) &
@@ -175,44 +172,28 @@ def run_backtest(df, risk_per_trade=2000, use_mtf=True):
             (df['Trend'])
         )
 
-    # Stoploss = previous swing low
-    df['SL'] = df['Low'].rolling(5).min().shift(1)
+    df['SL'] = df['Close'] - 1.5 * df['ATR']
+    df['Target'] = df['Close'] + 2 * df['ATR']
 
-    # Clean SL
-    df['SL'] = df['SL'].replace([np.inf, -np.inf], np.nan)
-    df['SL'] = df['SL'].bfill()
-    df['SL'] = df['SL'].fillna(df['Low'])
-
-    # Risk
     df['Risk'] = df['Close'] - df['SL']
-    df['Risk'] = df['Risk'].replace([np.inf, -np.inf], np.nan)
-    df['Risk'] = df['Risk'].fillna(0)
-
-    # Position size
-    df['Qty'] = risk_per_trade / df['Risk']
-    df['Qty'] = df['Qty'].replace([np.inf, -np.inf], np.nan)
-    df['Qty'] = df['Qty'].fillna(0)
-    df['Qty'] = df['Qty'].clip(lower=0).astype(int)
+    df['Qty'] = (risk_per_trade / df['Risk']).clip(lower=0).fillna(0).astype(int)
 
     trades = []
     in_trade = False
-    entry_i = None
-    entry_price = sl = tgt = qty = None
 
     for i in range(len(df)):
-        if (not in_trade) and df['Entry'].iloc[i] and df['Qty'].iloc[i] > 0 and df['Risk'].iloc[i] > 0:
+        if not in_trade and df['Entry'].iloc[i] and df['Qty'].iloc[i] > 0:
             entry_i = i
-            entry_price = float(df['Close'].iloc[i])
-            sl = float(df['SL'].iloc[i])
-            risk_per_share = entry_price - sl
-            tgt = entry_price + 2 * risk_per_share
-            qty = int(df['Qty'].iloc[i])
+            entry_price = df['Close'].iloc[i]
+            sl = df['SL'].iloc[i]
+            tgt = df['Target'].iloc[i]
+            qty = df['Qty'].iloc[i]
             in_trade = True
             continue
 
         if in_trade:
-            low = float(df['Low'].iloc[i])
-            high = float(df['High'].iloc[i])
+            low = df['Low'].iloc[i]
+            high = df['High'].iloc[i]
 
             if low <= sl:
                 trades.append({
@@ -238,9 +219,6 @@ def run_backtest(df, risk_per_trade=2000, use_mtf=True):
                 in_trade = False
                 continue
 
-    if len(trades) == 0:
-        return pd.DataFrame(columns=['Entry', 'Exit', 'EntryPrice', 'ExitPrice', 'Qty', 'PnL'])
-
     return pd.DataFrame(trades)
 
 # ─────────────────────────────────────────────
@@ -253,36 +231,34 @@ try:
     df = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
 
     if not df.empty:
-        # Flatten MultiIndex if present
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
         df = df.sort_index()
 
-        # Daily indicators
         df['EMA200'] = ema(df['Close'], 200)
         df['EMA50']  = ema(df['Close'], 50)
         df['RSI']    = rsi(df['Close'], 14)
+        df['ATR']    = atr(df, 14)
 
-        # Weekly trend from daily data (no second download, no alignment issues)
-        df['TrendW'] = compute_weekly_trend_from_daily(df)
+        df['TrendW'] = compute_weekly_trend(df)
 
-        # AVWAP
         t_idx = int(df['High'].argmax())
         b_idx = int(df['Low'].argmin())
         df['AVWAP_TOP'] = fast_avwap(df, t_idx)
         df['AVWAP_BOT'] = fast_avwap(df, b_idx)
 
         # ─────────────────────────────────────────
-        # PRICE + VOLUME + RSI CHART
+        # PRICE + VOLUME + RSI + ATR CHART
         # ─────────────────────────────────────────
         fig = make_subplots(
-            rows=3, cols=1,
+            rows=4, cols=1,
             shared_xaxes=True,
             vertical_spacing=0.03,
-            row_heights=[0.6, 0.15, 0.25]
+            row_heights=[0.55, 0.15, 0.15, 0.15]
         )
 
+        # PRICE
         fig.add_trace(go.Candlestick(
             x=df.index,
             open=df['Open'],
@@ -310,7 +286,7 @@ try:
             name="AVWAP Support"
         ), row=1, col=1)
 
-        # Volume
+        # VOLUME
         v_colors = ["#00e676" if df['Close'].iloc[i] > df['Open'].iloc[i] else "#ff3d5a" for i in range(len(df))]
         fig.add_trace(go.Bar(
             x=df.index, y=df['Volume'],
@@ -328,9 +304,21 @@ try:
         fig.add_hline(y=70, line_dash="dash", line_color="#ff3d5a", row=3, col=1)
         fig.add_hline(y=30, line_dash="dash", line_color="#00e676", row=3, col=1)
 
+        # ATR (dual color)
+        atr_color = np.where(df['ATR'].diff() >= 0, "#ff3d5a", "#00e676")
+
+        fig.add_trace(go.Scatter(
+            x=df.index,
+            y=df['ATR'],
+            mode='lines',
+            line=dict(width=2.5),
+            marker=dict(color=atr_color),
+            name="ATR(14)"
+        ), row=4, col=1)
+
         fig.update_layout(
             template="plotly_dark",
-            height=800,
+            height=1000,
             xaxis_rangeslider_visible=False,
             paper_bgcolor="#08090d",
             plot_bgcolor="#08090d",
@@ -381,7 +369,7 @@ try:
         # ─────────────────────────────────────────
         curr = df.iloc[-1]
         entry = float(curr['Close'])
-        sl_live = float(curr['Low'])
+        sl_live = float(entry - 1.5 * curr['ATR'])
         diff = entry - sl_live
         qty_live = int(risk_amt / diff) if diff > 0 else 0
         
@@ -389,7 +377,7 @@ try:
         c1.metric("Live Price", f"₹{entry:,.2f}")
         c2.metric(f"Qty (Risk ₹{risk_amt})", f"{qty_live}")
         c3.metric("Stop Loss", f"₹{sl_live:,.2f}", delta=f"-₹{diff:.2f}", delta_color="inverse")
-        c4.metric("Target (1:2)", f"₹{entry + (diff*2):,.2f}" if diff > 0 else "—")
+        c4.metric("Target (1:2 ATR)", f"₹{entry + (2 * curr['ATR']):,.2f}")
 
     else:
         st.error("No data returned for this ticker/timeframe.")
