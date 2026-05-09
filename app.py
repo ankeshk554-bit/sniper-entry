@@ -166,46 +166,59 @@ def anchored_vwap(df, anchor_index):
     full.iloc[anchor_index:] = vwap
     return full
 
+# ============================================================
+# ANCHORED VWAP FUNCTION
+# ============================================================
+def anchored_vwap(df, anchor_index):
+    tp = (df["High"] + df["Low"] + df["Close"]) / 3
+    vol = df["Volume"]
+
+    cum_vol = vol.iloc[anchor_index:].cumsum()
+    cum_tp_vol = (tp * vol).iloc[anchor_index:].cumsum()
+
+    vwap = cum_tp_vol / cum_vol
+
+    full = pd.Series(index=df.index, dtype=float)
+    full.iloc[anchor_index:] = vwap
+    return full
+
 
 # ============================================================
-# ULTRA-PRO PLOTLY CHART (FINAL VERSION)
+# ULTRA-PRO PLOTLY CHART (RSI SEPARATE PANEL)
 # ============================================================
 def plot_ultra_pro_chart(df, i1, i2, trend_series):
     fig = go.Figure()
 
     # -------------------------
-    # CANDLESTICKS
+    # MAIN PRICE CHART
     # -------------------------
     fig.add_trace(go.Candlestick(
         x=df.index,
         open=df["Open"], high=df["High"],
         low=df["Low"], close=df["Close"],
-        name="Price"
+        name="Price",
+        yaxis="y1"
     ))
 
-    # -------------------------
     # EMA200
-    # -------------------------
     fig.add_trace(go.Scatter(
         x=df.index, y=df["EMA200"],
         mode="lines",
         line=dict(color="orange", width=2),
-        name="EMA200"
+        name="EMA200",
+        yaxis="y1"
     ))
 
-    # -------------------------
     # AVWAP
-    # -------------------------
     fig.add_trace(go.Scatter(
         x=df.index, y=df["AVWAP"],
         mode="lines",
         line=dict(color="purple", width=2),
-        name="AVWAP"
+        name="AVWAP",
+        yaxis="y1"
     ))
 
-    # -------------------------
-    # VWAP FROM MAJOR TOP
-    # -------------------------
+    # VWAP FROM TOP
     top_idx = df["High"].idxmax()
     df["VWAP_TOP"] = anchored_vwap(df, df.index.get_loc(top_idx))
 
@@ -214,12 +227,11 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
         y=df["VWAP_TOP"],
         mode="lines",
         line=dict(color="red", width=1.5),
-        name="VWAP from Top"
+        name="VWAP from Top",
+        yaxis="y1"
     ))
 
-    # -------------------------
-    # VWAP FROM MAJOR BOTTOM
-    # -------------------------
+    # VWAP FROM BOTTOM
     bottom_idx = df["Low"].idxmin()
     df["VWAP_BOTTOM"] = anchored_vwap(df, df.index.get_loc(bottom_idx))
 
@@ -228,23 +240,23 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
         y=df["VWAP_BOTTOM"],
         mode="lines",
         line=dict(color="green", width=1.5),
-        name="VWAP from Bottom"
+        name="VWAP from Bottom",
+        yaxis="y1"
     ))
 
-    # -------------------------
-    # BULLISH DIVERGENCE MARKERS
-    # -------------------------
+    # Bullish Divergence
     fig.add_trace(go.Scatter(
         x=[df.index[i1], df.index[i2]],
         y=[df["Low"].iloc[i1], df["Low"].iloc[i2]],
         mode="markers+lines",
         marker=dict(color="lime", size=12),
         line=dict(color="lime", width=2),
-        name="Bullish Divergence"
+        name="Bullish Divergence",
+        yaxis="y1"
     ))
 
     # -------------------------
-    # VOLUME
+    # VOLUME (BOTTOM OF PRICE PANEL)
     # -------------------------
     fig.add_trace(go.Bar(
         x=df.index,
@@ -255,7 +267,7 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
     ))
 
     # -------------------------
-    # RSI PANEL BELOW
+    # RSI PANEL (SEPARATE)
     # -------------------------
     fig.add_trace(go.Scatter(
         x=df.index,
@@ -263,48 +275,46 @@ def plot_ultra_pro_chart(df, i1, i2, trend_series):
         mode="lines",
         line=dict(color="cyan", width=2),
         name="RSI",
-        yaxis="y4"
+        yaxis="y3"
     ))
 
     # -------------------------
     # LAYOUT
     # -------------------------
     fig.update_layout(
-        height=900,
-        xaxis=dict(domain=[0, 1]),
+        height=950,
 
-        # Main price axis
+        # MAIN PRICE PANEL
         yaxis=dict(
             title="Price",
+            domain=[0.35, 1.0],   # top 65%
             side="right"
         ),
 
-        # Volume axis
+        # VOLUME PANEL (overlay bottom of price)
         yaxis2=dict(
             title="Volume",
+            domain=[0.35, 1.0],
             overlaying="y",
             side="left",
             showgrid=False,
             rangemode="tozero"
         ),
 
-        # RSI axis
-        yaxis4=dict(
+        # RSI PANEL (bottom 35%)
+        yaxis3=dict(
             title="RSI",
-            anchor="x",
-            overlaying="y",
-            side="left",
-            position=0.0,
+            domain=[0, 0.30],
             range=[0, 100],
             showgrid=True
         ),
 
+        xaxis=dict(domain=[0, 1]),
         showlegend=True,
         margin=dict(l=10, r=10, t=40, b=10)
     )
 
     return fig
-
 # ============================================================
 # BACKTEST ENGINE
 # ============================================================
