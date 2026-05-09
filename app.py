@@ -298,8 +298,12 @@ def main():
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
-            # Ensure numeric where possible
-            df = df.apply(pd.to_numeric, errors='ignore')
+            # SAFE numeric conversion (no errors)
+            for col in df.columns:
+                try:
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+                except:
+                    pass
 
             df, div_pairs = apply_divergence_engine(df)
             trades, _ = run_backtest(df, div_pairs, risk_per_trade)
