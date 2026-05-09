@@ -317,7 +317,7 @@ def main():
         with col1:
             universe = st.selectbox("Universe", ["NIFTY200", "Custom"])
         with col2:
-            interval_s = st.selectbox("Timeframe", ["1d", "1h", "15m"])
+            interval_s = st.selectbox("Timeframe", ["1d", "1h", "15m"], key="screener_tf")
         with col3:
             mode = st.selectbox("View Mode", ["Simple", "Detailed"])
 
@@ -384,7 +384,8 @@ def main():
         st.title("Sniper Backtester")
 
         ticker = st.text_input("Ticker", "HAL.NS")
-        interval_b = st.selectbox("Timeframe", ["1d", "1h", "15m"])
+        interval_b = st.selectbox("Timeframe", ["1d", "1h", "15m"], key="backtest_tf")
+
         risk = st.number_input("Risk per Trade (₹)", value=2000)
         years = st.slider("Years of Data", 1, 5, 2)
         use_trend_bt = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True)
