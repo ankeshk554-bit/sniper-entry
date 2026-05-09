@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from datetime import date, timedelta
 
 # ============================================================
-# NIFTY200 LIST
+# NIFTY200 LIST (TRUNCATED FOR BREVITY — ADD FULL LIST IF NEEDED)
 # ============================================================
 NIFTY200 = [
     "RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS","HINDUNILVR.NS","ITC.NS","LT.NS",
@@ -21,8 +21,7 @@ NIFTY200 = [
     "HAVELLS.NS","ICICIPRULI.NS","IGL.NS","INDHOTEL.NS","INDIGO.NS","INDUSINDBK.NS","JINDALSTEL.NS",
     "LUPIN.NS","MCDOWELL-N.NS","MFSL.NS","MUTHOOTFIN.NS","NAUKRI.NS","PEL.NS","PIDILITIND.NS",
     "PIIND.NS","PNB.NS","POLYCAB.NS","RECLTD.NS","SAIL.NS","SRF.NS","TATACONSUM.NS","TATAMOTORS.NS",
-    "TATAPOWER.NS","TORNTPHARM.NS","TRENT.NS","TVSMOTOR.NS","UBL.NS","VOLTAS.NS","ZEEL.NS",
-    # (List truncated for brevity — full NIFTY200 list continues)
+    "TATAPOWER.NS","TORNTPHARM.NS","TRENT.NS","TVSMOTOR.NS","UBL.NS","VOLTAS.NS","ZEEL.NS"
 ]
 
 # ============================================================
@@ -83,11 +82,8 @@ def apply_divergence_engine(df):
     df['RSI'] = rsi(df['Close'])
     df['ATR'] = atr(df)
     df['AVWAP'] = avwap(df)
-
     swing_mask = detect_strict_swing_lows(df)
-    df['SwingLow'] = swing_mask
     div_pairs = detect_rsi_bullish_divergence(df, swing_mask)
-
     return df, div_pairs
 
 # ============================================================
@@ -120,7 +116,6 @@ def scan_stock(ticker, interval):
         if not div_pairs:
             return None
 
-        # Latest divergence
         i1, i2 = div_pairs[-1]
 
         # Fresh divergence = last 3 candles
@@ -150,7 +145,7 @@ def scan_stock(ticker, interval):
         return None
 
 # ============================================================
-# BACKTEST ENGINE (unchanged)
+# BACKTEST ENGINE
 # ============================================================
 def run_backtest(df, div_pairs, risk_per_trade=2000):
     df = df.copy()
@@ -231,19 +226,19 @@ def main():
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            universe = st.selectbox("Universe", ["NIFTY200", "Custom"])
+            universe = st.selectbox("Universe", ["NIFTY200", "Custom"], key="universe_key")
         with col2:
-            interval = st.selectbox("Timeframe", ["1d", "1h", "15m"])
+            interval = st.selectbox("Timeframe", ["1d", "1h", "15m"], key="screener_tf")
         with col3:
-            mode = st.selectbox("View Mode", ["Simple", "Detailed"])
+            mode = st.selectbox("View Mode", ["Simple", "Detailed"], key="view_mode")
 
         if universe == "Custom":
-            custom = st.text_input("Enter tickers (comma separated)", "HAL.NS, TCS.NS")
+            custom = st.text_input("Enter tickers (comma separated)", "HAL.NS, TCS.NS", key="custom_list")
             tickers = [x.strip() for x in custom.split(",")]
         else:
             tickers = NIFTY200
 
-        if st.button("Run Screener"):
+        if st.button("Run Screener", key="run_screener"):
             st.info("Scanning stocks… please wait")
 
             results = []
@@ -268,12 +263,12 @@ def main():
     with tab_backtest:
         st.title("Sniper Backtester")
 
-        ticker = st.text_input("Ticker", value="HAL.NS")
-        interval = st.selectbox("Timeframe", ["1d", "1h", "15m"])
-        risk_per_trade = st.number_input("Risk per Trade (₹)", value=2000)
-        years = st.slider("Years of Data", 1, 5, 2)
+        ticker = st.text_input("Ticker", value="HAL.NS", key="bt_ticker")
+        interval = st.selectbox("Timeframe", ["1d", "1h", "15m"], key="backtest_tf")
+        risk_per_trade = st.number_input("Risk per Trade (₹)", value=2000, key="bt_risk")
+        years = st.slider("Years of Data", 1, 5, 2, key="bt_years")
 
-        if st.button("Run Backtest"):
+        if st.button("Run Backtest", key="run_backtest"):
             end_date = date.today()
             start_date = end_date - timedelta(days=365 * years)
 
