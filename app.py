@@ -320,13 +320,19 @@ def main():
     # BACKTEST TAB
     # ============================================================
     with tab_backtest:
-        st.title("Sniper Backtester")
-        ticker = st.text_input("Ticker", "HAL.NS")
-        interval_b = st.selectbox("Timeframe", ["1d", "1h", "15m"])
-        risk = st.number_input("Risk per Trade (₹)", value=2000)
-        years = st.slider("Years of Data", 1, 5, 2)
-        use_trend_bt = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True)
-        if st.button("Run Backtest"):
+        with tab_backtest:
+    st.title("Sniper Backtester")
+
+    ticker = st.text_input("Ticker", "HAL.NS")
+    interval_b = st.selectbox("Timeframe", ["1d", "1h", "15m"])
+    risk = st.number_input("Risk per Trade (₹)", value=2000)
+    years = st.slider("Years of Data", 1, 5, 2)
+    use_trend_bt = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True)
+
+    if st.button("Run Backtest"):
+        end = date.today()
+        start = end - timedelta(days=365 * years)
+        ...
             end = date.today()
                     if st.button("Run Backtest"):
             end = date.today()
