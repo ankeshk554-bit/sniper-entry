@@ -60,8 +60,24 @@ def get_weekly_trend(ticker):
     if df_w.empty:
         return None
 
+    # Flatten MultiIndex columns if present
+    if isinstance(df_w.columns, pd.MultiIndex):
+        df_w.columns = df_w.columns.get_level_values(0)
+
+    # Ensure numeric
+    df_w = df_w.apply(pd.to_numeric, errors="coerce")
+
+    # Indicators
     df_w["EMA200"] = ema(df_w["Close"], 200)
     df_w["RSI"] = rsi(df_w["Close"])
+
+    # Drop rows where indicators are NaN
+    df_w = df_w.dropna(subset=["EMA200", "RSI"])
+
+    if df_w.empty:
+        return None
+
+    # Weekly Trend = EMA200 + RSI>50
     df_w["TrendW"] = (df_w["Close"] > df_w["EMA200"]) & (df_w["RSI"] > 50)
 
     return df_w["TrendW"]
@@ -147,7 +163,7 @@ def scan_stock(ticker, interval, use_trend):
             return None
 
         # Weekly trend filter at divergence candle
-        if use_trend and not bool(df["TrendW"].iloc[i2]):
+        if use_trend and (("TrendW" not in df.columns) or (not bool(df["TrendW"].iloc[i2]))):
             return None
 
         # A++ filters
@@ -185,15 +201,19 @@ def run_backtest(df, div_pairs, risk_per_trade, trend_series, use_trend):
     df.index.name = "Timestamp"
     df = df.reset_index().reset_index(drop=True)
 
-    if use_trend:
+    if use_trend and trend_series is not None:
         df["TrendW"] = trend_series.reindex(df["Timestamp"], method="ffill")
+    elif use_trend and trend_series is None:
+        # No trend data available → skip all trades
+        return [], 0
 
     trades, equity = [], 0
 
     for (_, i2) in div_pairs:
         # Weekly trend filter at divergence candle
-        if use_trend and not bool(df["TrendW"].iloc[i2]):
-            continue
+        if use_trend:
+            if ("TrendW" not in df.columns) or (not bool(df["TrendW"].iloc[i2])):
+                continue
 
         entry_idx = i2 + 1
         if entry_idx >= len(df):
@@ -272,7 +292,11 @@ def main():
         with col3:
             mode = st.selectbox("View Mode", ["Simple", "Detailed"], key="view_mode")
 
-        use_trend = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True, key="trend_filter")
+        use_trend = st.checkbox(
+            "Use Weekly Trend Filter (EMA200 + RSI>50)",
+            value=True,
+            key="trend_filter"
+        )
 
         if universe == "Custom":
             custom = st.text_input("Enter tickers (comma separated)", "HAL.NS, TCS.NS", key="custom_list")
@@ -310,7 +334,11 @@ def main():
         risk_per_trade = st.number_input("Risk per Trade (₹)", value=2000, key="bt_risk")
         years = st.slider("Years of Data", 1, 5, 2, key="bt_years")
 
-        use_trend_bt = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True, key="trend_filter_bt")
+        use_trend_bt = st.checkbox(
+            "Use Weekly Trend Filter (EMA200 + RSI>50)",
+            value=True,
+            key="trend_filter_bt"
+        )
 
         if st.button("Run Backtest", key="run_backtest"):
             end_date = date.today()
@@ -335,7 +363,7 @@ def main():
             for col in df.columns:
                 try:
                     df[col] = pd.to_numeric(df[col], errors="coerce")
-                except:
+                except Exception:
                     pass
 
             df, div_pairs = apply_divergence_engine(df)
