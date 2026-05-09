@@ -453,6 +453,11 @@ def main():
     if run_btn:
         with st.spinner("Loading data & running engine..."):
             df = load_data(ticker, start_date, end_date, interval)
+
+# FIX: remove duplicate timestamps and sort
+df = df[~df.index.duplicated(keep='first')].copy()
+df = df.sort_index()
+
             df = df[~df.index.duplicated(keep='first')].copy()
 df = df.sort_index()
 
