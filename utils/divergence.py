@@ -25,8 +25,14 @@ def detect_rsi_bullish_divergence(df, swing_low_mask):
     swing_indices = np.where(swing_low_mask)[0]
 
     for i in range(1, len(swing_indices)):
-        i1 = swing_indices[i - 1]
-        i2 = swing_indices[i]
+        i1 = int(swing_indices[i - 1])
+        i2 = int(swing_indices[i])
+
+        # VALIDATION: ensure both are integers
+        if not isinstance(i1, (int, np.integer)): 
+            continue
+        if not isinstance(i2, (int, np.integer)):
+            continue
 
         if lows[i2] < lows[i1] and rsi_vals[i2] > rsi_vals[i1]:
             divergence_points.append((i1, i2))
@@ -39,15 +45,15 @@ def generate_divergence_markers(df, divergence_pairs):
     df['Div_Line_RSI'] = np.nan
 
     for (i1, i2) in divergence_pairs:
-        df.iloc[i2, df.columns.get_loc('Div_Arrow')] = df['Low'].iloc[i2] * 0.995
+        df.at[i2, 'Div_Arrow'] = df['Low'].iloc[i2] * 0.995
 
-        df.iloc[i1:i2+1, df.columns.get_loc('Div_Line_Price')] = np.linspace(
+        df.loc[i1:i2, 'Div_Line_Price'] = np.linspace(
             df['Low'].iloc[i1],
             df['Low'].iloc[i2],
             i2 - i1 + 1
         )
 
-        df.iloc[i1:i2+1, df.columns.get_loc('Div_Line_RSI')] = np.linspace(
+        df.loc[i1:i2, 'Div_Line_RSI'] = np.linspace(
             df['RSI'].iloc[i1],
             df['RSI'].iloc[i2],
             i2 - i1 + 1
