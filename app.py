@@ -1,16 +1,235 @@
+import numpy as np
+import pandas as pd
 import streamlit as st
 import yfinance as yf
 import plotly.graph_objects as go
 from datetime import date, timedelta
-import pandas as pd
-
-from utils.indicators import ema, rsi, atr, avwap
-from utils.divergence import apply_divergence_engine
-from utils.backtester import run_backtest, trades_to_df, build_equity_curve
-
 
 # ============================
-# DATA LOADER
+# 1. EXPONENTIAL MOVING AVERAGE
+# ============================
+def ema(series, length):
+    return series.ewm(span=length, adjust=False).mean()
+
+# ============================
+# 2. RELATIVE STRENGTH INDEX
+# ============================
+def rsi(series, length=14):
+    delta = series.diff()
+
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    gain_ema = gain.ewm(span=length, adjust=False).mean()
+    loss_ema = loss.ewm(span=length, adjust=False).mean()
+
+    rs = gain_ema / loss_ema
+    return 100 - (100 / (1 + rs))
+
+# ============================
+# 3. AVERAGE TRUE RANGE (ATR)
+# ============================
+def atr(df, length=14):
+    high = df['High']
+    low = df['Low']
+    close = df['Close']
+
+    tr1 = high - low
+    tr2 = (high - close.shift()).abs()
+    tr3 = (low - close.shift()).abs()
+
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    return tr.ewm(span=length, adjust=False).mean()
+
+# ============================
+# 4. ANCHORED VWAP (AVWAP)
+# ============================
+def avwap(df):
+    typical_price = (df['High'] + df['Low'] + df['Close']) / 3
+    cumulative_tp_vol = (typical_price * df['Volume']).cumsum()
+    cumulative_vol = df['Volume'].cumsum()
+    return cumulative_tp_vol / cumulative_vol
+
+# ============================
+# 5. STRICT SWING-LOW DETECTOR
+# ============================
+def detect_strict_swing_lows(df):
+    lows = df['Low'].values
+    swing_low = np.zeros(len(df), dtype=bool)
+
+    for i in range(2, len(df) - 2):
+        if (
+            lows[i] < lows[i - 1] and
+            lows[i] < lows[i - 2] and
+            lows[i] < lows[i + 1] and
+            lows[i] < lows[i + 2]
+        ):
+            swing_low[i] = True
+
+    return swing_low
+
+# ============================
+# 6. STRICT RSI BULLISH DIVERGENCE
+# ============================
+def detect_rsi_bullish_divergence(df, swing_low_mask):
+    divergence_points = []
+    lows = df['Low'].values
+    rsi_vals = df['RSI'].values
+
+    swing_indices = np.where(swing_low_mask)[0]
+
+    for i in range(1, len(swing_indices)):
+        i1 = swing_indices[i - 1]
+        i2 = swing_indices[i]
+
+        if lows[i2] < lows[i1] and rsi_vals[i2] > rsi_vals[i1]:
+            divergence_points.append((int(i1), int(i2)))
+
+    return divergence_points
+
+# ============================
+# 7. DIVERGENCE MARKER GENERATOR
+# ============================
+def generate_divergence_markers(df, divergence_pairs):
+    df['Div_Arrow'] = np.nan
+    df['Div_Line_Price'] = np.nan
+    df['Div_Line_RSI'] = np.nan
+
+    for (i1, i2) in divergence_pairs:
+        df.iloc[i2, df.columns.get_loc('Div_Arrow')] = df['Low'].iloc[i2] * 0.995
+
+        df.iloc[i1:i2+1, df.columns.get_loc('Div_Line_Price')] = np.linspace(
+            df['Low'].iloc[i1],
+            df['Low'].iloc[i2],
+            i2 - i1 + 1
+        )
+
+        df.iloc[i1:i2+1, df.columns.get_loc('Div_Line_RSI')] = np.linspace(
+            df['RSI'].iloc[i1],
+            df['RSI'].iloc[i2],
+            i2 - i1 + 1
+        )
+
+    return df
+
+# ============================
+# 8. FULL DIVERGENCE ENGINE
+# ============================
+def apply_divergence_engine(df):
+    df['EMA200'] = ema(df['Close'], 200)
+    df['RSI'] = rsi(df['Close'])
+    df['ATR'] = atr(df)
+    df['AVWAP'] = avwap(df)
+
+    swing_mask = detect_strict_swing_lows(df)
+    df['SwingLow'] = swing_mask
+
+    div_pairs = detect_rsi_bullish_divergence(df, swing_mask)
+
+    df = generate_divergence_markers(df, div_pairs)
+
+    return df, div_pairs
+
+# ============================
+# 9. BACKTEST ENGINE
+# ============================
+def run_backtest(df, divergence_pairs, risk_per_trade=2000):
+    df = df.copy()
+    df = df[~df.index.duplicated(keep='first')]
+    df = df.sort_index()
+    df = df.reset_index().rename(columns={"index": "Timestamp"})
+
+    trades = []
+    equity = 0
+
+    # Use Div_Arrow as entry signal (ignore divergence_pairs to avoid type issues)
+    for i in range(len(df)):
+        if pd.isna(df.at[i, "Div_Arrow"]):
+            continue
+
+        close_i = float(df.at[i, "Close"])
+        ema_i = float(df.at[i, "EMA200"])
+        avwap_i = float(df.at[i, "AVWAP"])
+        atr_i = float(df.at[i, "ATR"])
+
+        if (
+            np.isnan(close_i)
+            or np.isnan(ema_i)
+            or np.isnan(avwap_i)
+            or np.isnan(atr_i)
+        ):
+            continue
+
+        if close_i < ema_i:
+            continue
+
+        if close_i < avwap_i:
+            continue
+
+        entry_price = close_i
+
+        if atr_i <= 0:
+            continue
+
+        sl_distance = 1.5 * atr_i
+        qty = max(int(risk_per_trade / sl_distance), 1)
+
+        sl_price = entry_price - sl_distance
+        tp_price = entry_price + (2 * atr_i)
+
+        exit_price = None
+        exit_index = None
+
+        for j in range(i + 1, len(df)):
+            low_j = float(df.at[j, "Low"])
+            high_j = float(df.at[j, "High"])
+
+            if np.isnan(low_j) or np.isnan(high_j):
+                continue
+
+            if low_j <= sl_price:
+                exit_price = sl_price
+                exit_index = j
+                break
+
+            if high_j >= tp_price:
+                exit_price = tp_price
+                exit_index = j
+                break
+
+        if exit_price is None:
+            exit_price = float(df.at[len(df) - 1, "Close"])
+            exit_index = len(df) - 1
+
+        pnl = (exit_price - entry_price) * qty
+        equity += pnl
+
+        trades.append({
+            "Entry": df.at[i, "Timestamp"],
+            "Exit": df.at[exit_index, "Timestamp"],
+            "EntryPrice": entry_price,
+            "ExitPrice": exit_price,
+            "Qty": qty,
+            "PnL": pnl,
+            "Equity": equity
+        })
+
+    return trades, equity
+
+def trades_to_df(trades):
+    if len(trades) == 0:
+        return pd.DataFrame(columns=[
+            "Entry", "Exit", "EntryPrice", "ExitPrice", "Qty", "PnL", "Equity"
+        ])
+    return pd.DataFrame(trades)
+
+def build_equity_curve(trades_df):
+    if len(trades_df) == 0:
+        return pd.Series(dtype=float)
+    return trades_df["Equity"]
+
+# ============================
+# 10. STREAMLIT APP
 # ============================
 @st.cache_data
 def load_data(ticker, start, end, interval):
@@ -18,14 +237,9 @@ def load_data(ticker, start, end, interval):
     df.dropna(inplace=True)
     return df
 
-
-# ============================
-# CHART BUILDER
-# ============================
 def plot_chart(df, trades_df):
     fig = go.Figure()
 
-    # Price candles
     fig.add_trace(go.Candlestick(
         x=df.index,
         open=df['Open'],
@@ -35,7 +249,6 @@ def plot_chart(df, trades_df):
         name="Price"
     ))
 
-    # EMA200
     fig.add_trace(go.Scatter(
         x=df.index,
         y=df['EMA200'],
@@ -44,7 +257,6 @@ def plot_chart(df, trades_df):
         line=dict(color='orange', width=1)
     ))
 
-    # AVWAP
     fig.add_trace(go.Scatter(
         x=df.index,
         y=df['AVWAP'],
@@ -53,7 +265,6 @@ def plot_chart(df, trades_df):
         line=dict(color='purple', width=1)
     ))
 
-    # Divergence price line
     fig.add_trace(go.Scatter(
         x=df.index,
         y=df['Div_Line_Price'],
@@ -63,7 +274,6 @@ def plot_chart(df, trades_df):
         connectgaps=False
     ))
 
-    # Divergence arrows
     fig.add_trace(go.Scatter(
         x=df.index,
         y=df['Div_Arrow'],
@@ -72,7 +282,6 @@ def plot_chart(df, trades_df):
         marker=dict(symbol='triangle-up', size=10, color='lime'),
     ))
 
-    # Trade markers
     if len(trades_df) > 0:
         fig.add_trace(go.Scatter(
             x=trades_df['Entry'],
@@ -96,7 +305,6 @@ def plot_chart(df, trades_df):
         title="Price with RSI Bullish Divergence & Trades"
     )
 
-    # RSI panel
     rsi_fig = go.Figure()
     rsi_fig.add_trace(go.Scatter(
         x=df.index,
@@ -120,7 +328,6 @@ def plot_chart(df, trades_df):
         title="RSI + Divergence"
     )
 
-    # ATR panel
     atr_fig = go.Figure()
     atr_fig.add_trace(go.Scatter(
         x=df.index,
@@ -137,10 +344,6 @@ def plot_chart(df, trades_df):
 
     return fig, rsi_fig, atr_fig
 
-
-# ============================
-# METRICS
-# ============================
 def compute_metrics(trades_df):
     if len(trades_df) == 0:
         return 0, 0.0, 0.0, 0.0
@@ -164,10 +367,6 @@ def compute_metrics(trades_df):
 
     return total_trades, win_rate, net_pnl, max_dd
 
-
-# ============================
-# STREAMLIT APP
-# ============================
 def main():
     st.set_page_config(page_title="Sniper Terminal – Ankesh", layout="wide")
 
@@ -194,7 +393,6 @@ def main():
         with st.spinner("Loading data & running engine..."):
             df = load_data(ticker, start_date, end_date, interval)
 
-            # ⭐ FIX: remove duplicate timestamps and sort
             df = df[~df.index.duplicated(keep='first')].copy()
             df = df.sort_index()
 
@@ -202,21 +400,16 @@ def main():
                 st.error("No data loaded. Check ticker or timeframe.")
                 return
 
-            # Divergence engine
             df, div_pairs = apply_divergence_engine(df)
 
-            # Backtest
             trades, final_equity = run_backtest(df, div_pairs, risk_per_trade=risk_per_trade)
             trades_df = trades_to_df(trades)
 
-            # Metrics
             total_trades, win_rate, net_pnl, max_dd = compute_metrics(trades_df)
 
-            # Charts
             price_fig, rsi_fig, atr_fig = plot_chart(df, trades_df)
             equity_curve = build_equity_curve(trades_df)
 
-        # LEFT SIDE
         with col_left:
             st.subheader(f"{ticker} – Price & Signals")
             st.plotly_chart(price_fig, use_container_width=True)
@@ -246,7 +439,6 @@ def main():
             else:
                 st.info("No trades → no equity curve.")
 
-        # RIGHT SIDE
         with col_right:
             st.subheader("Backtest Results")
 
@@ -275,13 +467,11 @@ def main():
                 )
             else:
                 st.info("No trades generated by the divergence engine in this period.")
-
     else:
         with col_left:
             st.info("Set your parameters in the sidebar and click **Run Backtest**.")
         with col_right:
             st.empty()
-
 
 if __name__ == "__main__":
     main()
