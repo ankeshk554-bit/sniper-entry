@@ -99,29 +99,23 @@ def detect_rsi_bullish_divergence(df, swing_low_mask):
 # 7. DIVERGENCE MARKER GENERATOR
 # ============================
 def generate_divergence_markers(df, divergence_pairs):
-    """
-    Creates marker arrays for plotting:
-    - Price arrows
-    - Price connecting lines
-    - RSI connecting lines
-    """
     df['Div_Arrow'] = np.nan
     df['Div_Line_Price'] = np.nan
     df['Div_Line_RSI'] = np.nan
 
     for (i1, i2) in divergence_pairs:
         # Arrow at second swing low
-        df.loc[i2, 'Div_Arrow'] = df['Low'].iloc[i2] * 0.995
+        df.iloc[i2, df.columns.get_loc('Div_Arrow')] = df['Low'].iloc[i2] * 0.995
 
         # Price line
-        df.loc[i1:i2, 'Div_Line_Price'] = np.linspace(
+        df.iloc[i1:i2+1, df.columns.get_loc('Div_Line_Price')] = np.linspace(
             df['Low'].iloc[i1],
             df['Low'].iloc[i2],
             i2 - i1 + 1
         )
 
         # RSI line
-        df.loc[i1:i2, 'Div_Line_RSI'] = np.linspace(
+        df.iloc[i1:i2+1, df.columns.get_loc('Div_Line_RSI')] = np.linspace(
             df['RSI'].iloc[i1],
             df['RSI'].iloc[i2],
             i2 - i1 + 1
