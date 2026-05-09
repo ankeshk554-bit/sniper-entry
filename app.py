@@ -17,7 +17,6 @@ except:
 # ============================================================
 # UNIVERSE (NIFTY200 PLACEHOLDER)
 # ============================================================
-# Replace this with your full NIFTY200 list if you want
 NIFTY200 = [
     "INFY.NS", "TCS.NS", "RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS",
     "SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS", "LT.NS", "ITC.NS"
@@ -64,17 +63,14 @@ def compute_indicators(df):
     if df.empty:
         return df
 
-    # EMA
     df["EMA21"] = df["Close"].ewm(span=21, adjust=False).mean()
     df["EMA200"] = df["Close"].ewm(span=200, adjust=False).mean()
 
-    # RSI
     if ta is not None:
         df["RSI"] = ta.momentum.rsi(df["Close"], window=14)
     else:
         df["RSI"] = 50
 
-    # MACD (12, 26, 9)
     if ta is not None:
         macd = ta.trend.MACD(df["Close"], window_slow=26, window_fast=12, window_sign=9)
         df["MACD"] = macd.macd()
@@ -86,17 +82,23 @@ def compute_indicators(df):
     return df
 
 # ============================================================
-# DIVERGENCE ENGINE (CLASSIC + HIDDEN)
+# SANITIZE DF
 # ============================================================
 def sanitize_df(df):
     df = df.copy()
-    numeric_cols = ["Open","High","Low","Close","Volume",
-                    "EMA21","EMA200","RSI","MACD","MACD_SIGNAL","MACD_HIST"]
+    numeric_cols = [
+        "Open", "High", "Low", "Close", "Volume",
+        "EMA21", "EMA200", "RSI", "MACD", "MACD_SIGNAL", "MACD_HIST"
+    ]
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-    df = df.dropna(subset=["Open","High","Low","Close"])
+    df = df.dropna(subset=["Open", "High", "Low", "Close"])
     return df
+
+# ============================================================
+# DIVERGENCE ENGINE (CLASSIC + HIDDEN)
+# ============================================================
 def compute_divergences(df):
     df = sanitize_df(df)
 
@@ -116,29 +118,29 @@ def compute_divergences(df):
             H1 = float(df["High"].iloc[i-1])
             R0 = float(df["RSI"].iloc[i])
             R1 = float(df["RSI"].iloc[i-1])
-        except:
+        except Exception:
             continue
 
-        if any(np.isnan(x) for x in [L0,L1,H0,H1,R0,R1]):
+        if any(np.isnan(x) for x in [L0, L1, H0, H1, R0, R1]):
             continue
 
+        # Classic Bullish
         if L0 < L1 and R0 > R1:
             bull.append((df.index[i], L0))
 
+        # Classic Bearish
         if H0 > H1 and R0 < R1:
             bear.append((df.index[i], H0))
 
+        # Hidden Bullish
         if L0 > L1 and R0 < R1:
             hidden_bull.append((df.index[i], L0))
 
+        # Hidden Bearish
         if H0 < H1 and R0 > R1:
             hidden_bear.append((df.index[i], H0))
 
     return bull, bear, hidden_bull, hidden_bear
-
-
-
-
 
 # ============================================================
 # PULLBACK SETUP (HIGH VOLUME + EMA21 + RSI 50–68)
@@ -182,16 +184,12 @@ def find_major_swings(df, lookback=10):
     swing_low = None
 
     for i in range(lookback, len(df)-lookback):
-        # Swing High
         if df["High"].iloc[i] == df["High"].iloc[i-lookback:i+lookback+1].max():
             swing_high = df.index[i]
-
-        # Swing Low
         if df["Low"].iloc[i] == df["Low"].iloc[i-lookback:i+lookback+1].min():
             swing_low = df.index[i]
 
     return swing_high, swing_low
-
 
 def compute_avwap(df, anchor_index):
     if anchor_index is None:
@@ -207,14 +205,13 @@ def compute_avwap(df, anchor_index):
     return full
 
 # ============================================================
-# CHART ENGINE (PRICE + VOLUME + RSI + MACD)
+# CHART ENGINE (PRICE + VOLUME + RSI + MACD + DIVERGENCE LINES)
 # ============================================================
 def plot_ultra_chart(df, bull_divs, bear_divs, hidden_bull, hidden_bear, pullbacks):
     df = df.copy()
     if df.empty:
         return go.Figure()
 
-    # --- AVWAP Anchors ---
     swing_high, swing_low = find_major_swings(df, lookback=10)
     df["AVWAP_HIGH"] = compute_avwap(df, swing_high)
     df["AVWAP_LOW"] = compute_avwap(df, swing_low)
@@ -260,7 +257,7 @@ def plot_ultra_chart(df, bull_divs, bear_divs, hidden_bull, hidden_bear, pullbac
         name="AVWAP Low"
     ), row=1, col=1)
 
-    # Divergences
+    # Divergence markers
     for dt, price in bull_divs:
         if dt in df.index:
             fig.add_trace(go.Scatter(
@@ -278,6 +275,43 @@ def plot_ultra_chart(df, bull_divs, bear_divs, hidden_bull, hidden_bear, pullbac
                 marker=dict(color="#f44336", size=10, symbol="triangle-down"),
                 name="Bear Div"
             ), row=1, col=1)
+
+    for dt, price in hidden_bull:
+        if dt in df.index:
+            fig.add_trace(go.Scatter(
+                x=[dt], y=[price],
+                mode="markers",
+                marker=dict(color="#81c784", size=9, symbol="triangle-up"),
+                name="Hidden Bull"
+            ), row=1, col=1)
+
+    for dt, price in hidden_bear:
+        if dt in df.index:
+            fig.add_trace(go.Scatter(
+                x=[dt], y=[price],
+                mode="markers",
+                marker=dict(color="#ffb74d", size=9, symbol="triangle-down"),
+                name="Hidden Bear"
+            ), row=1, col=1)
+
+    # Divergence lines (pivot-to-pivot) for ALL types
+    def add_div_lines(points, color, name):
+        if len(points) < 2:
+            return
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        fig.add_trace(go.Scatter(
+            x=xs,
+            y=ys,
+            mode="lines",
+            line=dict(color=color, width=1.5, dash="solid"),
+            name=name
+        ), row=1, col=1)
+
+    add_div_lines(bull_divs, "#4caf50", "Bull Div Line")
+    add_div_lines(bear_divs, "#f44336", "Bear Div Line")
+    add_div_lines(hidden_bull, "#81c784", "Hidden Bull Line")
+    add_div_lines(hidden_bear, "#ffb74d", "Hidden Bear Line")
 
     # Pullbacks
     for dt, price in pullbacks:
@@ -768,7 +802,6 @@ def main():
                         plot_bgcolor="rgba(0,0,0,0)"
                     )
                     st.plotly_chart(eq_fig, use_container_width=True)
-
 
 # ENTRY POINT
 if __name__ == "__main__":
