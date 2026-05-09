@@ -328,4 +328,46 @@ def main():
         use_trend_bt = st.checkbox("Use Weekly Trend Filter (EMA200 + RSI>50)", value=True)
         if st.button("Run Backtest"):
             end = date.today()
-            start = end - timedelta(days=
+                    if st.button("Run Backtest"):
+            end = date.today()
+            start = end - timedelta(days=365 * years)
+
+            df = yf.download(
+                ticker,
+                start=start,
+                end=end,
+                interval=interval_b,
+                auto_adjust=True,
+                progress=False
+            )
+
+            if df.empty:
+                st.error("No data available for this ticker.")
+                return
+
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+
+            df = df.apply(pd.to_numeric, errors="coerce")
+            df, divs = apply_divergence_engine(df)
+
+            trend_series = get_weekly_trend(ticker) if use_trend_bt else None
+
+            trades, eq = run_backtest(df, divs, risk, trend_series, use_trend_bt)
+            df_trades = pd.DataFrame(trades)
+
+            if df_trades.empty:
+                st.info("No trades generated.")
+            else:
+                st.subheader("Backtest Results")
+                st.dataframe(df_trades, use_container_width=True)
+
+                st.metric("Total PnL", f"₹{round(eq, 2)}")
+                st.metric("Total Trades", len(df_trades))
+
+# ============================================================
+# MAIN ENTRY POINT
+# ============================================================
+if __name__ == "__main__":
+    main()
+
