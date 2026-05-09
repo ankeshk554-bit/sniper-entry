@@ -385,9 +385,10 @@ def main():
                     if trend_series is not None:
                         df["TrendW"] = trend_series.reindex(df.index, method="ffill")
 
-                    with st.modal(f"📈 Full-Screen Chart – {ticker}", key="full_screen_chart_modal"):
-                        fig = plot_ultra_pro_chart(df, i1, i2, df.get("TrendW"))
-                        st.plotly_chart(fig, use_container_width=True)
+                   with st.expander(f"📈 Full-Screen Chart – {ticker}", expanded=True):
+                       fig = plot_ultra_pro_chart(df, i1, i2, df.get("TrendW"))
+                       st.plotly_chart(fig, use_container_width=True)
+
 
     # ============================================================
     # BACKTEST TAB
