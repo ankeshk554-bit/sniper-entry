@@ -1262,7 +1262,10 @@ def main():
                 df_f = load_data(sel, interval)
                 if not df_f.empty:
                     df_f = compute_indicators(df_f)
-                    q = signal_quality(df_f, int(row["i2"]))
+                    i2 = int(row["i2"])
+                    i2 = min(i2, len(df_f) - 1)   # prevent out-of-range
+                    q = signal_quality(df_f, i2)
+
                     with st.expander("Signal Quality Breakdown", expanded=True):
                         cols = st.columns(5)
                         for ki, (k, v) in enumerate(q["breakdown"].items()):
