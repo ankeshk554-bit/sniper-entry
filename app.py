@@ -2,18 +2,19 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import time
-from typing import Optional
+from typing import Optional, List, Tuple
 
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import streamlit as st
 import yfinance as yf
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # =========================================================
 # UNIVERSE
 # =========================================================
+
 NIFTY50 = [
     "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "INFY.NS",
     "HINDUNILVR.NS", "ITC.NS", "LT.NS", "SBIN.NS", "BHARTIARTL.NS",
@@ -33,7 +34,7 @@ NIFTY200 = NIFTY50 + [
     "BANDHANBNK.NS", "BANKBARODA.NS", "BEL.NS", "BERGEPAINT.NS",
     "BIOCON.NS", "BOSCHLTD.NS", "CANBK.NS", "CHOLAFIN.NS", "CUMMINSIND.NS",
     "DABUR.NS", "DLF.NS", "GAIL.NS", "GODREJCP.NS", "HAVELLS.NS",
-    "ICICIPRULI.NS", "IGL.NS", "INDHOTEL.NS", "INDIGO.NS", "INDUSINDBK.NS",
+    "ICICIPRULI.NS", "IGL.NS", "INDHOTEL.NS", "INDIGO.NS",
     "LUPIN.NS", "MFSL.NS", "MUTHOOTFIN.NS", "NAUKRI.NS", "PIDILITIND.NS",
     "PNB.NS", "POLYCAB.NS", "RECLTD.NS", "SAIL.NS", "SRF.NS",
     "TATACONSUM.NS", "TRENT.NS", "TVSMOTOR.NS", "VOLTAS.NS", "HAL.NS",
@@ -42,20 +43,19 @@ NIFTY200 = NIFTY50 + [
 NIFTY200 = list(dict.fromkeys(NIFTY200))
 
 # =========================================================
-# PAGE CONFIG
+# PAGE CONFIG + CSS
 # =========================================================
+
 st.set_page_config(
-    page_title="Sniper Terminal v2 - Ankesh",
+    page_title="Sniper Terminal v3 - Ankesh",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-# =========================================================
-# CSS
-# =========================================================
 CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap');
+
 body, .stApp {
     background: #07090f !important;
     color: #c9d1d9 !important;
@@ -64,6 +64,7 @@ body, .stApp {
     font-family: "JetBrains Mono", monospace !important;
 }
 #MainMenu, footer, header {visibility:hidden;}
+
 /* Tabs */
 .stTabs [data-baseweb="tab-list"] {
     background: #0d1117;
@@ -77,6 +78,7 @@ body, .stApp {
     color: #58a6ff !important;
     border-bottom: 2px solid #58a6ff;
 }
+
 /* Buttons */
 .stButton>button {
     background: linear-gradient(135deg, #238636, #2ea043) !important;
@@ -98,12 +100,13 @@ body, .stApp {
     opacity: .4 !important;
     transform: none !important;
 }
+
 /* Inputs */
 .stTextInput>div>div>input,
 .stNumberInput>div>div>input {
     background: #0d1117 !important;
     border: 1px solid #30363d !important;
-    color: #e6edf3 !important;
+    color:#e6edf3 !important;
     border-radius: 6px !important;
     font-family: "JetBrains Mono", monospace !important;
 }
@@ -111,67 +114,42 @@ body, .stApp {
     background: #0d1117 !important;
     border: 1px solid #30363d !important;
 }
-/* Toggle */
-.stCheckbox, .stToggle {
-    font-family: "JetBrains Mono", monospace;
-    font-size: 12px;
-    color: #c9d1d9;
-}
+
 /* Dataframe */
 .stDataFrame {
     border: 1px solid #21262d !important;
     border-radius: 8px !important;
 }
+
 /* Metrics */
 [data-testid="metric-container"] {
     background: #0d1117;
     border: 1px solid #21262d;
     border-radius: 8px;
+    padding: 8px 10px;
 }
 [data-testid="stMetricValue"] {
     font-family: "JetBrains Mono", monospace;
     font-size: 20px;
 }
+
 /* Expander */
 .streamlit-expanderHeader {
     background: #0d1117 !important;
     border: 1px solid #21262d !important;
 }
-/* Sidebar */
-.css-1d391kg {
-    background: #07090f;
-}
-/* Progress bar */
-.stProgress>div>div>div {
-    background: linear-gradient(90deg, #238636, #2ea043) !important;
-}
-/* Info/Warning */
-.stInfo {
-    background: rgba(88, 166, 255, .08) !important;
-    border: 1px solid rgba(88, 166, 255, .4) !important;
-}
-.stWarning {
-    background: rgba(210, 153, 34, .08) !important;
-    border: 1px solid rgba(210, 153, 34, .4) !important;
-}
-.stSuccess {
-    background: rgba(35, 134, 54, .08) !important;
-    border: 1px solid rgba(35, 134, 54, .4) !important;
-}
-.stError {
-    background: rgba(218, 54, 51, .08) !important;
-    border: 1px solid rgba(218, 54, 51, .4) !important;
-}
+
 /* Scrollbar */
 ::-webkit-scrollbar {width: 4px; height: 4px;}
 ::-webkit-scrollbar-track {background: #07090f;}
 ::-webkit-scrollbar-thumb {background: #30363d; border-radius: 4px;}
+
 /* Cards */
 .sig-card {
     background: #0d1117;
     border: 1px solid #21262d;
     border-radius: 10px;
-    padding: 12px 14px;
+    padding: 10px 12px;
 }
 .sig-card:hover { border-color: #58a6ff; }
 </style>
@@ -181,6 +159,7 @@ st.markdown(CSS, unsafe_allow_html=True)
 # =========================================================
 # DATA LOADER
 # =========================================================
+
 @st.cache_data(show_spinner=False, ttl=300)
 def load_data(ticker: str, interval: str, years: int = 1) -> pd.DataFrame:
     period_map = {
@@ -208,33 +187,114 @@ def load_data(ticker: str, interval: str, years: int = 1) -> pd.DataFrame:
     return df
 
 # =========================================================
+# VCP DETECTOR (Mark Minervini VCP)
+# =========================================================
+
+@st.cache_data(show_spinner=False)
+def compute_vcp(df: pd.DataFrame, lookback: int = 180, min_contractions: int = 3) -> pd.DataFrame:
+    """
+    Simplified Mark Minervini VCP detection:
+    - Anchor high in lookback
+    - Successive pullbacks with contracting depth
+    - Volatility contraction (20d < 50d)
+    - Price tightening near pivot (anchor high)
+    """
+    df = df.copy()
+    df["VCP_Flag"] = False
+    df["VCP_Stage"] = 0
+    df["VCP_Pivot"] = np.nan
+
+    if len(df) < lookback + 20:
+        return df
+
+    window = df.iloc[-lookback:]
+    c = window["Close"]
+    hi = window["High"]
+    lo = window["Low"]
+
+    # 1) Anchor high
+    anchor_idx = hi.idxmax()
+    anchor_price = hi.loc[anchor_idx]
+
+    # 2) Pullback lows after anchor
+    pb_mask = (lo.shift(1) > lo) & (lo.shift(-1) > lo) & (window.index > anchor_idx)
+    pb_lows = lo[pb_mask]
+
+    if len(pb_lows) < min_contractions:
+        return df
+
+    # 3) Contraction depths
+    contractions: List[Tuple[pd.Timestamp, float]] = []
+    for idx, price in pb_lows.items():
+        dd = (anchor_price - price) / anchor_price * 100.0
+        contractions.append((idx, dd))
+
+    contractions = sorted(contractions, key=lambda x: x[0])
+    depths = [d for _, d in contractions]
+
+    if len(depths) < min_contractions:
+        return df
+
+    # Decreasing depth (allow small noise)
+    dec_ok = all(depths[i] <= depths[i - 1] * 1.1 for i in range(1, len(depths)))
+    if not dec_ok:
+        return df
+
+    # 4) Volatility contraction
+    ret = c.pct_change().fillna(0)
+    vol_20 = ret.rolling(20).std().iloc[-1]
+    vol_50 = ret.rolling(50).std().iloc[-1]
+    if pd.isna(vol_20) or pd.isna(vol_50) or vol_50 == 0:
+        return df
+    vol_ok = vol_20 < vol_50 * 0.9
+    if not vol_ok:
+        return df
+
+    # 5) Pivot tightening near anchor
+    last_close = c.iloc[-1]
+    pivot_ok = (last_close > anchor_price * 0.93) and (last_close <= anchor_price * 1.02)
+
+    if pivot_ok:
+        df.loc[window.index[-1], "VCP_Flag"] = True
+        df.loc[window.index[-1], "VCP_Stage"] = min(len(depths), 5)
+        df.loc[window.index[-1], "VCP_Pivot"] = float(anchor_price)
+
+    return df
+
+# =========================================================
 # INDICATORS
 # =========================================================
+
 @st.cache_data(show_spinner=False)
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     c, hi, lo, v = df["Close"], df["High"], df["Low"], df["Volume"]
 
+    # EMAs
     for p in [9, 21, 50, 200]:
         df[f"EMA{p}"] = c.ewm(span=p, adjust=False).mean()
 
+    # RSI
     delta = c.diff()
     gain = delta.clip(lower=0).ewm(span=14, adjust=False).mean()
     loss = (-delta.clip(upper=0)).ewm(span=14, adjust=False).mean()
     df["RSI"] = 100 - 100 / (1 + gain / loss.replace(0, np.nan))
 
+    # MACD
     e12 = c.ewm(span=12, adjust=False).mean()
     e26 = c.ewm(span=26, adjust=False).mean()
     df["MACD"] = e12 - e26
     df["MACD_Signal"] = df["MACD"].ewm(span=9, adjust=False).mean()
     df["MACD_Hist"] = df["MACD"] - df["MACD_Signal"]
 
+    # ATR
     tr = pd.concat(
         [hi - lo, (hi - c.shift()).abs(), (lo - c.shift()).abs()],
-        axis=1,
+        axis=1
     ).max(axis=1)
     df["ATR"] = tr.ewm(span=14, adjust=False).mean()
 
+    # Bollinger Bands
     sma20 = c.rolling(20).mean()
     std20 = c.rolling(20).std()
     df["BB_U"] = sma20 + 2 * std20
@@ -242,17 +302,20 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["BB_L"] = sma20 - 2 * std20
     df["BB_W"] = (df["BB_U"] - df["BB_L"]) / df["BB_M"].replace(0, np.nan)
 
+    # Keltner Channels
     ema20 = c.ewm(span=20, adjust=False).mean()
     df["KC_U"] = ema20 + 1.5 * df["ATR"]
     df["KC_L"] = ema20 - 1.5 * df["ATR"]
     df["Squeeze"] = (df["BB_U"] < df["KC_U"]) & (df["BB_L"] > df["KC_L"])
     df["Squeeze_Fire"] = df["Squeeze"].shift(1).fillna(False) & ~df["Squeeze"]
 
+    # Stochastics
     lo14 = lo.rolling(14).min()
     hi14 = hi.rolling(14).max()
     df["Stoch_K"] = 100 * (c - lo14) / (hi14 - lo14).replace(0, np.nan)
     df["Stoch_D"] = df["Stoch_K"].rolling(3).mean()
 
+    # AVWAP + bands
     tp = (hi + lo + c) / 3
     df["AVWAP"] = (tp * v).cumsum() / v.cumsum()
     var = ((tp - df["AVWAP"]) ** 2 * v).cumsum() / v.cumsum()
@@ -262,15 +325,18 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["VWAP_U2"] = df["AVWAP"] + 2 * sd
     df["VWAP_L2"] = df["AVWAP"] - 2 * sd
 
+    # Volume ratios
     df["Vol_MA20"] = v.rolling(20).mean()
     df["Vol_Ratio"] = v / df["Vol_MA20"].replace(0, np.nan)
 
+    # Order Flow Imbalance (OFI)
     body = (c - df["Open"]).abs()
     rng = (hi - lo).replace(0, np.nan)
     br = (body / rng).clip(0, 1)
     bull_b = (c > df["Open"]).astype(float)
     df["OFI"] = (bull_b * br - (1 - bull_b) * br).rolling(5).mean()
 
+    # Candle patterns
     bdy = (c - df["Open"]).abs()
     lwck = df[["Open", "Close"]].min(axis=1) - lo
     uwck = hi - df[["Open", "Close"]].max(axis=1)
@@ -278,27 +344,20 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
     prev_bear = c.shift(1) < df["Open"].shift(1)
     curr_bull = c > df["Open"]
-    df["BullEngulf"] = (
-        prev_bear
-        & curr_bull
-        & (df["Open"] <= c.shift(1))
-        & (c >= df["Open"].shift(1))
-    )
-    df["BearEngulf"] = (
-        (c.shift(1) > df["Open"].shift(1))
-        & (c < df["Open"])
-        & (df["Open"] >= c.shift(1))
-    )
-
+    df["BullEngulf"] = prev_bear & curr_bull & (df["Open"] <= c.shift(1)) & (c >= df["Open"])
+    df["BearEngulf"] = (c.shift(1) > df["Open"].shift(1)) & (c < df["Open"]) & (df["Open"] > c.shift(1))
     df["BullPat"] = df["Hammer"] | df["BullEngulf"]
-    df["BearPat"] = df["BearEngulf"] | (
-        (uwck > 2 * bdy) & (lwck < bdy * 0.5) & (c < df["Open"])
-    )
+    df["BearPat"] = df["BearEngulf"] | ((uwck > 2 * bdy) & (lwck < bdy * 0.5) & (c < df["Open"]))
+
+    # VCP integration
+    df = compute_vcp(df)
+
     return df
 
 # =========================================================
-# AVWAPS
+# AVWAP FROM ANCHORS
 # =========================================================
+
 @st.cache_data(show_spinner=False)
 def compute_avwaps(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -329,32 +388,33 @@ def compute_avwaps(df: pd.DataFrame) -> pd.DataFrame:
 # =========================================================
 # DIVERGENCES
 # =========================================================
+
 def swing_lows(series: pd.Series, bars: int = 5) -> np.ndarray:
     v = series.values
     m = np.zeros(len(v), dtype=bool)
     for i in range(bars, len(v) - bars):
-        if v[i] == v[i - bars : i + bars + 1].min():
+        if v[i] == v[i - bars:i + bars + 1].min():
             m[i] = True
     return m
-
 
 def swing_highs(series: pd.Series, bars: int = 5) -> np.ndarray:
     v = series.values
     m = np.zeros(len(v), dtype=bool)
     for i in range(bars, len(v) - bars):
-        if v[i] == v[i - bars : i + bars + 1].max():
+        if v[i] == v[i - bars:i + bars + 1].max():
             m[i] = True
     return m
 
-
 @st.cache_data(show_spinner=False)
 def compute_divergences(df: pd.DataFrame, bars: int = 5):
+    df = df.copy()
     lm = swing_lows(df["Low"], bars)
     hm = swing_highs(df["High"], bars)
     li = np.where(lm)[0]
     hi = np.where(hm)[0]
 
-    bull, bear = [], []
+    bull = []
+    bear = []
 
     for j in range(1, len(li)):
         i1, i2 = li[j - 1], li[j]
@@ -379,7 +439,8 @@ def compute_divergences(df: pd.DataFrame, bars: int = 5):
 # =========================================================
 # SIGNAL QUALITY
 # =========================================================
-def signal_quality(df: pd.DataFrame, i2: int):
+
+def signal_quality(df: pd.DataFrame, i2: int) -> dict:
     sc = {}
     cl = float(df["Close"].iloc[i2])
     atr = float(df["ATR"].iloc[i2])
@@ -393,7 +454,7 @@ def signal_quality(df: pd.DataFrame, i2: int):
 
     e21 = float(df["EMA21"].iloc[i2])
     e50 = float(df["EMA50"].iloc[i2])
-    e200 = float(df["EMA200"].iloc[i2]) if "EMA200" in df.columns else e50
+    e200 = float(df["EMA200"].iloc[i2])
     sc["EMA_Stack"] = 10 if cl > e21 > e50 > e200 else 6 if cl > e50 > e200 else 2
 
     sc["AVWAP"] = 10 if cl > float(df["AVWAP"].iloc[i2]) else 3
@@ -416,24 +477,21 @@ def signal_quality(df: pd.DataFrame, i2: int):
     sc["ATR_Valid"] = 10 if atr > 0 else 0
 
     tot = sum(sc.values())
-    if tot >= 85:
-        gr = "A+"
-    elif tot >= 70:
-        gr = "A"
-    elif tot >= 55:
-        gr = "B+"
-    elif tot >= 40:
-        gr = "B"
-    else:
-        gr = "C"
-
+    gr = (
+        "A+" if tot >= 85 else
+        "A" if tot >= 70 else
+        "B+" if tot >= 55 else
+        "B" if tot >= 40 else
+        "C"
+    )
     return {"total": tot, "grade": gr, "breakdown": sc}
 
 # =========================================================
 # WEEKLY TREND
 # =========================================================
+
 @st.cache_data(show_spinner=False)
-def get_weekly_trend(ticker: str):
+def get_weekly_trend(ticker: str) -> Optional[pd.Series]:
     df = load_data(ticker, "1wk", years=5)
     if df.empty:
         return None
@@ -445,18 +503,29 @@ def get_weekly_trend(ticker: str):
     return (df["Close"] > df["EMA200"]) & (df["RSI"] > 50)
 
 # =========================================================
-# SCANNER
+# SCAN STOCK (SCREENER)
 # =========================================================
-def scan_stock(ticker, interval, use_trend, fresh_only, bars, min_q):
+
+def scan_stock(
+    ticker: str,
+    interval: str,
+    use_trend: bool,
+    fresh_only: bool,
+    bars: int,
+    min_q: int,
+):
     try:
         df = load_data(ticker, interval)
         if df.empty or len(df) < 100:
             return None
+
         df = compute_indicators(df)
         bull, _ = compute_divergences(df, bars=bars)
         if not bull:
             return None
+
         i1, i2 = bull[-1]
+
         if fresh_only and i2 < len(df) - 4:
             return None
 
@@ -464,7 +533,8 @@ def scan_stock(ticker, interval, use_trend, fresh_only, bars, min_q):
             tw = get_weekly_trend(ticker)
             if tw is None:
                 return None
-            if not bool(tw.reindex(df.index, method="ffill").iloc[i2]):
+            tw_aligned = bool(tw.reindex(df.index, method="ffill").iloc[i2])
+            if not tw_aligned:
                 return None
 
         ei = i2 + 1
@@ -473,7 +543,7 @@ def scan_stock(ticker, interval, use_trend, fresh_only, bars, min_q):
 
         ep = float(df["Open"].iloc[ei])
         atr = float(df["ATR"].iloc[i2])
-        e200 = float(df["EMA200"].iloc[i2]) if "EMA200" in df.columns else ep
+        e200 = float(df["EMA200"].iloc[i2])
         avwap = float(df["AVWAP"].iloc[i2])
 
         if ep < e200 or ep < avwap or atr <= 0:
@@ -491,9 +561,12 @@ def scan_stock(ticker, interval, use_trend, fresh_only, bars, min_q):
         vr = float(df["Vol_Ratio"].iloc[i2]) if not np.isnan(df["Vol_Ratio"].iloc[i2]) else 1.0
         ofi = float(df["OFI"].iloc[i2]) if not np.isnan(df["OFI"].iloc[i2]) else 0.0
 
+        vcp_flag = bool(df["VCP_Flag"].iloc[i2]) if "VCP_Flag" in df.columns else False
+        vcp_stage = int(df["VCP_Stage"].iloc[i2]) if "VCP_Stage" in df.columns else 0
+
         return {
             "Ticker": ticker,
-            "Date": str(df.index[ei])[:10],
+            "Date": str(df.index[i2])[:10],
             "Entry": ep,
             "SL": sl,
             "TP1": tp1,
@@ -508,6 +581,8 @@ def scan_stock(ticker, interval, use_trend, fresh_only, bars, min_q):
             "OFI": round(ofi, 3),
             "Bull_Pat": bool(df["BullPat"].iloc[i2]),
             "ATR": round(atr, 2),
+            "VCP_Flag": vcp_flag,
+            "VCP_Stage": vcp_stage,
             "i1": i1,
             "i2": i2,
         }
@@ -517,9 +592,16 @@ def scan_stock(ticker, interval, use_trend, fresh_only, bars, min_q):
 # =========================================================
 # BACKTEST ENGINE
 # =========================================================
-def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0):
-    df = df.reset_index(drop=True)
 
+def run_backtest(
+    df: pd.DataFrame,
+    bull_divs: List[Tuple[int, int]],
+    risk: float,
+    trend_s: Optional[pd.Series],
+    use_trend: bool,
+    trail: float = 2.0,
+):
+    df = df.reset_index(drop=False)
     if use_trend and trend_s is not None:
         try:
             ts = trend_s.reindex(range(len(df)), method="ffill")
@@ -532,6 +614,8 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0):
     eq = [100.0]
 
     for i1, i2 in bull_divs:
+        if i2 >= len(df):
+            continue
         if not bool(ts.iloc[i2] if i2 < len(ts) else True):
             continue
 
@@ -541,7 +625,7 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0):
 
         ep = float(df["Open"].iloc[ei])
         atr = float(df["ATR"].iloc[i2])
-        e200 = float(df["EMA200"].iloc[i2]) if "EMA200" in df.columns else ep
+        e200 = float(df["EMA200"].iloc[i2])
         avwap = float(df["AVWAP"].iloc[i2])
 
         if ep < e200 or ep < avwap or atr <= 0:
@@ -566,7 +650,6 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0):
             hi = float(df["High"].iloc[j])
             lo = float(df["Low"].iloc[j])
             cl = float(df["Close"].iloc[j])
-
             csl = max(csl, cl - trail * float(df["ATR"].iloc[j]))
 
             if lo <= csl:
@@ -579,8 +662,8 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0):
                 pnl1 = (tp1 - ep) * half
                 trades.append(
                     {
-                        "Entry_Date": str(df.index[ei])[:10],
-                        "Exit_Date": str(df.index[j])[:10],
+                        "Entry_Date": str(df["index"].iloc[ei])[:10],
+                        "Exit_Date": str(df["index"].iloc[j])[:10],
                         "Entry": round(ep, 2),
                         "Exit": round(tp1, 2),
                         "Qty": half,
@@ -605,8 +688,8 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0):
         ret = (xp - ep) / ep * 100
         trades.append(
             {
-                "Entry_Date": str(df.index[ei])[:10],
-                "Exit_Date": str(df.index[xi])[:10],
+                "Entry_Date": str(df["index"].iloc[ei])[:10],
+                "Exit_Date": str(df["index"].iloc[xi])[:10],
                 "Entry": round(ep, 2),
                 "Exit": round(xp, 2),
                 "Qty": rem,
@@ -621,33 +704,32 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0):
         return pd.DataFrame(), {}
 
     dft = pd.DataFrame(trades)
-    rets = dft["Ret_Pct"].values / 100
+    rets = dft["Ret_Pct"].values / 100.0
     wins = rets[rets > 0]
     losses = rets[rets < 0]
 
     std = rets.std() if len(rets) > 1 else 1e-9
     neg_std = losses.std() if len(losses) > 1 else 1e-9
-
-    sharpe = round(rets.mean() / std * (252 ** 0.5), 2) if std else 0
-    sortino = round(rets.mean() / neg_std * (252 ** 0.5), 2) if neg_std else 0
+    sharpe = round(rets.mean() / std * (252 ** 0.5), 2) if std else 0.0
+    sortino = round(rets.mean() / neg_std * (252 ** 0.5), 2) if neg_std else 0.0
 
     ea = np.array(eq)
     pk = np.maximum.accumulate(ea)
     dd = (pk - ea) / pk * 100
-    max_dd = float(dd.max())
+    max_dd = float(dd.max()) if len(dd) else 0.0
     calmar = round((ea[-1] - ea[0]) / ea[0] * 100 / max(max_dd, 0.01), 2)
 
-    wr = round(len(wins) / len(rets) * 100, 1) if len(rets) else 0
-    aw = round(wins.mean() * 100, 2) if len(wins) else 0
-    al = round(abs(losses.mean()) * 100, 2) if len(losses) else 0
-    pf = round(wins.sum() / abs(losses.sum()), 2) if len(losses) and losses.sum() != 0 else 0
+    wr = round(len(wins) / len(rets) * 100, 1) if len(rets) else 0.0
+    aw = round(wins.mean() * 100, 2) if len(wins) else 0.0
+    al = round(abs(losses.mean()) * 100, 2) if len(losses) else 0.0
+    pf = round(wins.sum() / abs(losses.sum()), 2) if len(losses) and losses.sum() != 0 else 0.0
 
     p = len(wins) / len(rets) if len(rets) else 0.5
     a = abs(losses.mean()) if len(losses) else 1e-9
     b = wins.mean() if len(wins) else 1e-9
-    kelly = round(max(0, p / a - (1 - p) / b) * 100, 1) if a > 0 else 0
+    kelly = round(max(0, p / a - (1 - p) / b) * 100, 1) if a > 0 else 0.0
 
-    return dft, {
+    stats = {
         "Sharpe": sharpe,
         "Sortino": sortino,
         "Calmar": calmar,
@@ -662,10 +744,12 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0):
         "Kelly": kelly,
         "Equity": eq,
     }
+    return dft, stats
 
 # =========================================================
-# AUTO TRADE ENGINE (PAPER + SHOONYA STUB)
+# AUTO TRADE ENGINE (PAPER + STUB)
 # =========================================================
+
 def get_autotrade_state():
     if "at_active" not in st.session_state:
         st.session_state["at_active"] = False
@@ -677,7 +761,6 @@ def get_autotrade_state():
         st.session_state["at_pnl"] = 0.0
     if "at_mode" not in st.session_state:
         st.session_state["at_mode"] = "paper"
-
 
 def paper_place_order(ticker, direction, qty, price, sl, tp1, reason):
     ts = time.strftime("%H:%M:%S")
@@ -698,8 +781,7 @@ def paper_place_order(ticker, direction, qty, price, sl, tp1, reason):
         f"[{ts}] PAPER {direction} {qty}x {ticker} @ {price:.2f} | SL: {sl:.2f} TP1: {tp1:.2f} | {reason}"
     )
 
-
-def paper_check_exits(risk_per_trade):
+def paper_check_exits(risk_per_trade: float):
     to_close = []
     for tk, pos in st.session_state["at_pos"].items():
         if pos["status"] != "OPEN":
@@ -730,17 +812,15 @@ def paper_check_exits(risk_per_trade):
     for tk in to_close:
         st.session_state["at_pos"][tk]["status"] = "CLOSED"
 
-
 def shoonya_place_order(ticker, direction, qty, price):
-    # Stub: replace with actual Shoonya API call
-    # from api_helper import ShoonyaApiPy
-    # api.place_order(...)
+    # Stub for real API integration
     return {"status": "ok", "msg": "Shoonya stub - connect api_helper.py"}
 
 # =========================================================
 # CHARTS
 # =========================================================
-def plot_chart(df, bull_divs, bear_divs, ticker):
+
+def plot_chart(df: pd.DataFrame, bull_divs, bear_divs, ticker: str):
     df = compute_avwaps(df)
     fig = make_subplots(
         rows=4,
@@ -751,6 +831,7 @@ def plot_chart(df, bull_divs, bear_divs, ticker):
         subplot_titles=[ticker, "Volume / OFI", "RSI (14)", "MACD"],
     )
 
+    # Price
     fig.add_trace(
         go.Candlestick(
             x=df.index,
@@ -768,6 +849,7 @@ def plot_chart(df, bull_divs, bear_divs, ticker):
         col=1,
     )
 
+    # EMAs
     for sp, col, nm in [
         (21, "#e3b341", "EMA21"),
         (50, "#58a6ff", "EMA50"),
@@ -787,6 +869,7 @@ def plot_chart(df, bull_divs, bear_divs, ticker):
                 col=1,
             )
 
+    # AVWAP + bands
     if "AVWAP" in df.columns:
         fig.add_trace(
             go.Scatter(
@@ -817,12 +900,13 @@ def plot_chart(df, bull_divs, bear_divs, ticker):
                     line=dict(color=cl, width=1.2, dash="dot"),
                     name=nm,
                     opacity=0.75,
-                    showlegend=True,
+                    showlegend=False,
                 ),
                 row=1,
                 col=1,
             )
 
+    # Squeeze Fire
     if "Squeeze_Fire" in df.columns:
         sq = df[df["Squeeze_Fire"]]
         if len(sq):
@@ -838,6 +922,7 @@ def plot_chart(df, bull_divs, bear_divs, ticker):
                 col=1,
             )
 
+    # Bullish patterns
     if "BullPat" in df.columns:
         bp = df[df["BullPat"]]
         if len(bp):
@@ -853,6 +938,7 @@ def plot_chart(df, bull_divs, bear_divs, ticker):
                 col=1,
             )
 
+    # Divergences on price
     for divs, pc, color, nm in [
         (bull_divs, "Low", "#3fb950", "Bull Div"),
         (bear_divs, "High", "#f85149", "Bear Div"),
@@ -871,6 +957,28 @@ def plot_chart(df, bull_divs, bear_divs, ticker):
                 col=1,
             )
 
+    # VCP pivot marker
+    if "VCP_Flag" in df.columns:
+        vcp_rows = df[df["VCP_Flag"] == True]
+        if len(vcp_rows):
+            fig.add_trace(
+                go.Scatter(
+                    x=vcp_rows.index,
+                    y=vcp_rows["Close"],
+                    mode="markers",
+                    marker=dict(
+                        symbol="diamond",
+                        size=14,
+                        color="#ffdd57",
+                        line=dict(color="#f97316", width=1.5),
+                    ),
+                    name="VCP Pivot",
+                ),
+                row=1,
+                col=1,
+            )
+
+    # Volume + Vol_MA20
     vc = ["#3fb950" if c >= o else "#f85149" for c, o in zip(df["Close"], df["Open"])]
     fig.add_trace(
         go.Bar(
@@ -883,7 +991,6 @@ def plot_chart(df, bull_divs, bear_divs, ticker):
         row=2,
         col=1,
     )
-
     if "Vol_MA20" in df.columns:
         fig.add_trace(
             go.Scatter(
@@ -896,6 +1003,7 @@ def plot_chart(df, bull_divs, bear_divs, ticker):
             col=1,
         )
 
+    # RSI
     fig.add_trace(
         go.Scatter(
             x=df.index,
@@ -906,7 +1014,6 @@ def plot_chart(df, bull_divs, bear_divs, ticker):
         row=3,
         col=1,
     )
-
     for lvl, cl in [
         (70, "rgba(248, 81, 73, .4)"),
         (50, "rgba(139, 148, 158, .3)"),
@@ -919,6 +1026,7 @@ def plot_chart(df, bull_divs, bear_divs, ticker):
             col=1,
         )
 
+    # Divergences on RSI
     for divs, pc, color in [
         (bull_divs, "Low", "#3fb950"),
         (bear_divs, "High", "#f85149"),
@@ -937,6 +1045,7 @@ def plot_chart(df, bull_divs, bear_divs, ticker):
                 col=1,
             )
 
+    # MACD
     mhc = ["#3fb950" if v >= 0 else "#f85149" for v in df["MACD_Hist"]]
     fig.add_trace(
         go.Bar(
@@ -988,8 +1097,7 @@ def plot_chart(df, bull_divs, bear_divs, ticker):
         fig.update_yaxes(gridcolor="#21262d", side="right", row=i, col=1)
     return fig
 
-
-def plot_equity(eq_list):
+def plot_equity(eq_list: List[float]):
     ea = np.array(eq_list)
     pk = np.maximum.accumulate(ea)
     dd = (pk - ea) / pk * 100
@@ -1036,159 +1144,56 @@ def plot_equity(eq_list):
     )
     return fig
 
-
-def gc(g):
-    return {
-        "A+": "#3fb950",
-        "A": "#39d353",
-        "B+": "#e3b341",
-        "B": "#fb923c",
-        "C": "#f85149",
-    }.get(g, "#8b949e")
-
 # =========================================================
-# ADVANCED QUANT / BACKTEST ANALYTICS
+# MAIN APP
 # =========================================================
-def summarize_trades(dft: pd.DataFrame):
-    if dft.empty:
-        return {}
-    by_reason = dft.groupby("Reason")["PnL"].agg(["count", "sum", "mean"]).reset_index()
-    by_side = dft.assign(Side=np.where(dft["PnL"] >= 0, "Win", "Loss")).groupby("Side")[
-        "PnL"
-    ].agg(["count", "sum", "mean"]).reset_index()
-    return {"by_reason": by_reason, "by_side": by_side}
 
-
-def trade_distribution_chart(dft: pd.DataFrame):
-    if dft.empty:
-        return None
-    fig = go.Figure()
-    fig.add_trace(
-        go.Histogram(
-            x=dft["Ret_Pct"],
-            nbinsx=30,
-            marker_color="#58a6ff",
-            opacity=0.8,
-        )
-    )
-    fig.update_layout(
-        title="Trade Return Distribution (%)",
-        template="plotly_dark",
-        paper_bgcolor="#07090f",
-        plot_bgcolor="#0d1117",
-        xaxis_title="Return (%)",
-        yaxis_title="Count",
-        margin=dict(l=8, r=8, t=36, b=8),
-    )
-    return fig
-
-
-def monthly_returns_table(dft: pd.DataFrame):
-    if dft.empty:
-        return pd.DataFrame()
-    df = dft.copy()
-    df["Exit_Date"] = pd.to_datetime(df["Exit_Date"])
-    df["Month"] = df["Exit_Date"].dt.to_period("M")
-    mr = df.groupby("Month")["Ret_Pct"].sum().to_frame("Monthly_Return_%")
-    mr.index = mr.index.astype(str)
-    return mr
-
-
-def optimize_parameters(
-    df: pd.DataFrame,
-    risk: float,
-    trend_s,
-    use_trend: bool,
-    swing_range: range,
-    trail_values: list[float],
-):
-    results = []
-    for bars in swing_range:
-        bull_divs, _ = compute_divergences(df, bars=bars)
-        if not bull_divs:
-            continue
-        for trail in trail_values:
-            dft, stats = run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=trail)
-            if not stats:
-                continue
-            results.append(
-                {
-                    "Swing_Bars": bars,
-                    "Trail_ATR": trail,
-                    "Trades": stats["Trades"],
-                    "Sharpe": stats["Sharpe"],
-                    "Calmar": stats["Calmar"],
-                    "Win_Rate": stats["Win_Rate"],
-                    "Total_Return": stats["Total_Return"],
-                    "Max_DD": stats["Max_DD"],
-                    "Profit_Factor": stats["Profit_Factor"],
-                }
-            )
-    if not results:
-        return pd.DataFrame()
-    df_res = pd.DataFrame(results)
-    df_res = df_res.sort_values(
-        ["Total_Return", "Sharpe", "Calmar"], ascending=[False, False, False]
-    )
-    return df_res
-
-# =========================================================
-# MAIN
-# =========================================================
 def main():
     get_autotrade_state()
 
-    # Top banner – use wasted top space
     st.markdown(
         """
-<div style="
-    background: linear-gradient(135deg, #0d1117, #161b22);
-    border: 1px solid #21262d;
-    border-radius: 12px;
-    padding: 18px 26px;
-    margin-bottom: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;">
-  <div style="display:flex;align-items:center;gap:16px;">
-    <div style="
-        width: 44px; height: 44px;
-        background: linear-gradient(135deg, #2ea043, #1a7f37);
-        border-radius: 12px;
-        display: flex; align-items: center; justify-content: center;
-        font-size: 22px; font-weight: 900; color:#fff;
-        box-shadow: 0 0 16px rgba(35, 134, 54, .4);">
-      S
-    </div>
-    <div>
-      <div style="
-          font-size: 22px; font-weight: 800; color:#f0f6fc;
-          letter-spacing:-0.5px; font-family: Plus Jakarta Sans, sans-serif;">
-        SNIPER TERMINAL v2
-      </div>
-      <div style="
-          font-size: 10px; color:#8b949e; letter-spacing:2px; margin-top:2px;">
-        RSI+MACD DUAL DIVERGENCE · BB SQUEEZE · ORDER FLOW · VWAP BANDS · AUTO TRADE · QUANT BACKTEST
-      </div>
-    </div>
-  </div>
-  <div style="text-align:right;font-size:11px;color:#8b949e;">
-    <div>Mode: <span style="color:#58a6ff;">BACKTEST & RESEARCH</span></div>
-    <div>Universe: NIFTY50 / NIFTY200 / Custom</div>
-  </div>
-</div>
-""",
+        <div style="
+            background: linear-gradient(135deg, #0d1117, #161b22);
+            border: 1px solid #21262d;
+            border-radius: 12px;
+            padding: 18px 26px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;">
+          <div style="display:flex;align-items:center;gap:16px;">
+            <div style="
+                width: 44px; height: 44px;
+                background: linear-gradient(135deg, #2ea043, #1a7f37);
+                border-radius: 12px;
+                display: flex; align-items: center; justify-content: center;
+                font-size: 22px; font-weight: 900; color:#fff;
+                box-shadow: 0 0 16px rgba(35, 134, 54, .4);">
+              S
+            </div>
+            <div>
+              <div style="font-size: 22px; font-weight: 800;color:#f0f6fc; letter-spacing:-0.5px;">
+                SNIPER TERMINAL v3
+              </div>
+              <div style="font-size: 10px ; color : #8b949e; letter-spacing : 2px; margin-top: 2px;">
+                RSI+MACD DUAL DIVERGENCE · BB SQUEEZE · ORDER FLOW · VWAP BANDS · VCP · AUTO TRADE · QUANT LAB
+              </div>
+            </div>
+          </div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
-    tab_s, tab_b, tab_at, tab_g = st.tabs(
-        ["Screener", "Backtest (Quant+)", "Auto Trade", "Guide"]
-    )
+    tab_s, tab_b, tab_at, tab_g = st.tabs(["Screener", "Backtest", "Auto Trade", "Guide"])
 
-    # =====================================================
+    # -----------------------------------------------------
     # SCREENER
-    # =====================================================
+    # -----------------------------------------------------
     with tab_s:
+        st.markdown("### Screener")
+
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             universe = st.selectbox("Universe", ["NIFTY50", "NIFTY200", "Custom"])
@@ -1231,9 +1236,7 @@ def main():
             if results:
                 df_r = pd.DataFrame(results).sort_values("Quality", ascending=False)
                 st.session_state["sr"] = df_r
-                st.success(
-                    f"Found {len(df_r)} setups from {len(tickers)} tickers scanned."
-                )
+                st.success(f"Found {len(df_r)} setups from {len(tickers)} tickers.")
             else:
                 st.warning("No setups found. Lower Min Quality or disable filters.")
 
@@ -1243,26 +1246,13 @@ def main():
             m1.metric("Signals", len(df_r))
             m2.metric("A+ Grade", int((df_r["Grade"] == "A+").sum()))
             m3.metric("Squeeze Fire", int(df_r["Squeeze_Fire"].sum()))
-            m4.metric(
-                "Avg Quality", f"{round(df_r['Quality'].mean(), 0):.0f}/100"
-            )
-            m5.metric("Avg R:R", f"{round(df_r['R_R'].mean(), 2):.2f}x")
+            m4.metric("Avg Quality", f"{round(df_r['Quality'].mean(), 0)}/100")
+            m5.metric("Avg R:R", f"{round(df_r['R_R'].mean(), 2)}x")
 
             disp = [
-                "Ticker",
-                "Date",
-                "Grade",
-                "Quality",
-                "Entry",
-                "SL",
-                "TP1",
-                "TP2",
-                "R_R",
-                "RSI",
-                "Vol_Ratio",
-                "Squeeze_Fire",
-                "OFI",
-                "Bull_Pat",
+                "Ticker", "Date", "Grade", "Quality", "Entry", "SL", "TP1", "TP2",
+                "R_R", "RSI", "Vol_Ratio", "Squeeze_Fire", "OFI", "Bull_Pat",
+                "VCP_Flag", "VCP_Stage",
             ]
             st.dataframe(df_r[disp], use_container_width=True, height=280)
 
@@ -1277,200 +1267,70 @@ def main():
                         cols = st.columns(5)
                         for ki, (k, v) in enumerate(q["breakdown"].items()):
                             cols[ki % 5].metric(k.replace("_", " "), f"{v}/10")
+
                     bd, brd = compute_divergences(df_f, bars=swing_bars)
                     with st.expander(f"Chart -- {sel}", expanded=True):
-                        st.plotly_chart(
-                            plot_chart(df_f, bd, brd, sel),
-                            use_container_width=True,
-                        )
+                        st.plotly_chart(plot_chart(df_f, bd, brd, sel), use_container_width=True)
 
                     st.markdown("---")
                     st.markdown("**Quick Add to Auto Trade**")
                     qc1, qc2, qc3 = st.columns(3)
-                    at_risk = qc1.number_input(
-                        "Risk per trade (INR)", value=2000, key="at_risk_screener"
-                    )
-                    at_qty = qc2.number_input(
-                        "Qty override (0=auto)", value=0, key="at_qty_screener"
-                    )
-                    if qc3.button(
-                        "Add Signal to Auto Trade", key=f"add_at_{sel}"
-                    ):
-                        auto_qty = (
-                            at_qty
-                            if at_qty > 0
-                            else max(
-                                1,
-                                int(
-                                    at_risk
-                                    / max(
-                                        row["Entry"] - row["SL"],
-                                        0.01,
-                                    )
-                                ),
-                            )
-                        )
-                        paper_place_order(
-                            sel,
-                            "BUY",
-                            auto_qty,
-                            row["Entry"],
-                            row["SL"],
-                            row["TP1"],
-                            "Screener Signal",
-                        )
-                        st.success(f"Added {sel} to Auto Trade (paper).")
+                    at_risk = qc1.number_input("Risk per trade (INR)", value=2000, key="at_risk_q")
+                    at_qty = qc2.number_input("Qty override (0=auto)", value=0, key="at_qty_q")
+                    if qc3.button("Add Signal to Auto Trade", key=f"add_at_{sel}"):
+                        auto_qty = at_qty if at_qty > 0 else max(1, int(at_risk / (row["Entry"] - row["SL"])))
+                        paper_place_order(sel, "BUY", auto_qty, row["Entry"], row["SL"], row["TP1"], "Screener Signal")
+                        st.success(f"Added {sel} to Auto Trade (paper)")
 
-    # =====================================================
-    # BACKTEST (QUANT+)
-    # =====================================================
+    # -----------------------------------------------------
+    # BACKTEST
+    # -----------------------------------------------------
     with tab_b:
-        top1, top2, top3 = st.columns([2, 1.2, 1.2])
-        with top1:
-            st.subheader("Single Backtest")
-        with top2:
-            st.subheader("Parameter Sweep")
-        with top3:
-            st.subheader("Analytics View")
+        st.markdown("### Backtest & Quant Lab")
 
-        st.markdown("---")
+        with st.form("backtest_form"):
+            bc1, bc2, bc3, bc4 = st.columns(4)
+            bt_tick = bc1.text_input("Ticker", "HAL.NS")
+            bt_tf = bc2.selectbox("Timeframe", ["1d", "1h", "15m", "1wk"])
+            bt_risk = bc3.number_input("Risk per Trade (INR)", value=2000, step=500)
+            bt_years = bc4.slider("Years of Data", 1, 5, 2)
 
-        col_left, col_right = st.columns([1.4, 1.6])
+            bc5, bc6, bc7 = st.columns(3)
+            bt_trend = bc5.toggle("Weekly Trend Filter", value=True)
+            bt_trail = bc6.slider("Trailing Stop (ATR x)", 1.0, 3.0, 2.0, 0.25)
+            bt_bars = bc7.slider("Swing Bars", 3, 10, 5)
 
-        # ---------- LEFT: CONFIG + RUN ----------
-        with col_left:
-            with st.form("backtest_form"):
-                bc1, bc2, bc3, bc4 = st.columns(4)
-                bt_tick = bc1.text_input("Ticker", "HAL.NS")
-                bt_tf = bc2.selectbox("Timeframe", ["1d", "1h", "15m", "1wk"])
-                bt_risk = bc3.number_input(
-                    "Risk per Trade (INR)", value=2000, step=500
-                )
-                bt_years = bc4.slider("Years of Data", 1, 5, 2)
+            vc1, vc2, vc3 = st.columns(3)
+            show_trades_table = vc1.checkbox("Show Trades Table", value=True)
+            show_equity_curve = vc2.checkbox("Show Equity Curve", value=True)
+            show_ret_dist = vc3.checkbox("Show Return Distribution", value=True)
 
-                bc5, bc6, bc7 = st.columns(3)
-                bt_trend = bc5.toggle("Weekly Trend Filter", value=True)
-                bt_trail = bc6.slider(
-                    "Trailing Stop (ATR x)", 1.0, 3.0, 2.0, 0.25
-                )
-                bt_bars = bc7.slider("Swing Bars", 3, 10, 5)
+            submitted = st.form_submit_button("Run Backtest")
 
-                adv = st.expander("Advanced Quant Settings", expanded=False)
-                with adv:
-                    bt_min_trades = st.number_input(
-                        "Min trades to consider valid",
-                        value=10,
-                        min_value=0,
-                        step=1,
-                    )
-                    bt_show_monthly = st.checkbox(
-                        "Show Monthly Returns Table", value=True
-                    )
-                    bt_show_dist = st.checkbox(
-                        "Show Trade Distribution", value=True
-                    )
-
-                submitted = st.form_submit_button("Run Backtest")
-
-            if submitted:
-                with st.spinner("Running backtest ..."):
-                    df_bt = load_data(bt_tick, bt_tf, years=bt_years)
-                    if df_bt.empty:
-                        st.error("No data. Check ticker.")
+        if submitted:
+            with st.spinner("Running backtest ..."):
+                df_bt = load_data(bt_tick, bt_tf, years=bt_years)
+                if df_bt.empty:
+                    st.error("No data. Check ticker.")
+                else:
+                    df_bt = compute_indicators(df_bt)
+                    bull_d, bear_d = compute_divergences(df_bt, bars=bt_bars)
+                    ts = get_weekly_trend(bt_tick) if bt_trend else None
+                    dft, stats = run_backtest(df_bt, bull_d, bt_risk, ts, bt_trend, bt_trail)
+                    if dft.empty:
+                        st.info("No trades generated. Try more data or relax filters.")
                     else:
-                        df_bt = compute_indicators(df_bt)
-                        bull_d, bear_d = compute_divergences(df_bt, bars=bt_bars)
-                        ts = get_weekly_trend(bt_tick) if bt_trend else None
-                        dft, stats = run_backtest(
-                            df_bt, bull_d, bt_risk, ts, bt_trend, bt_trail
-                        )
-                        if dft.empty or stats.get("Trades", 0) < bt_min_trades:
-                            st.info(
-                                "No trades generated or below minimum trades. "
-                                "Try more data or relax filters."
-                            )
-                        else:
-                            st.session_state["bt_stats"] = stats
-                            st.session_state["bt_trades"] = dft
-                            st.session_state["bt_df"] = df_bt
-                            st.session_state["bt_bull"] = bull_d
-                            st.session_state["bt_bear"] = bear_d
-                            st.session_state["bt_cfg"] = {
-                                "ticker": bt_tick,
-                                "tf": bt_tf,
-                                "years": bt_years,
-                                "risk": bt_risk,
-                                "trend": bt_trend,
-                                "trail": bt_trail,
-                                "bars": bt_bars,
-                            }
+                        st.session_state["bt_stats"] = stats
+                        st.session_state["bt_trades"] = dft
+                        st.session_state["bt_df"] = df_bt
 
-        # ---------- RIGHT: OPTIMIZATION ----------
-        with col_right:
-            st.markdown("**Quant Optimization Module**")
-            if "bt_df" not in st.session_state:
-                st.info(
-                    "Run a single backtest first to enable optimization on the same dataset."
-                )
-            else:
-                opt_df = st.session_state["bt_df"]
-                opt_cfg = st.session_state["bt_cfg"]
-                opt_ts = get_weekly_trend(opt_cfg["ticker"]) if opt_cfg["trend"] else None
-
-                oc1, oc2 = st.columns(2)
-                with oc1:
-                    swing_min = st.slider("Swing Bars (min)", 3, 10, opt_cfg["bars"])
-                    swing_max = st.slider("Swing Bars (max)", swing_min, 15, max(10, swing_min + 2))
-                with oc2:
-                    trail_min = st.slider("Trail ATR (min)", 1.0, 3.0, opt_cfg["trail"])
-                    trail_max = st.slider("Trail ATR (max)", trail_min, 4.0, max(2.5, trail_min + 0.5))
-                    trail_step = st.selectbox("Trail ATR step", [0.25, 0.5, 1.0], index=0)
-
-                if st.button("Run Optimization Grid Search"):
-                    with st.spinner("Running parameter sweep ..."):
-                        swing_range = range(swing_min, swing_max + 1)
-                        trail_values = list(
-                            np.round(
-                                np.arange(trail_min, trail_max + 1e-9, trail_step),
-                                2,
-                            )
-                        )
-                        df_opt = optimize_parameters(
-                            opt_df,
-                            opt_cfg["risk"],
-                            opt_ts,
-                            opt_cfg["trend"],
-                            swing_range,
-                            trail_values,
-                        )
-                        if df_opt.empty:
-                            st.warning("No valid parameter combinations produced trades.")
-                        else:
-                            st.session_state["bt_opt"] = df_opt
-                            st.success(
-                                f"Optimization complete. {len(df_opt)} combinations evaluated."
-                            )
-
-                if "bt_opt" in st.session_state:
-                    df_opt = st.session_state["bt_opt"]
-                    st.markdown("**Top Parameter Sets (sorted by Total Return / Sharpe / Calmar)**")
-                    st.dataframe(df_opt.head(15), use_container_width=True, height=260)
-
-        st.markdown("---")
-
-        # ---------- GLOBAL BACKTEST OUTPUT ----------
         if "bt_stats" in st.session_state:
             stats = st.session_state["bt_stats"]
             dft = st.session_state["bt_trades"]
-            eq = stats["Equity"]
 
-            st.markdown("### Performance Snapshot")
+            st.markdown("### Performance Summary")
             r1 = st.columns(4)
-            r1[0].metric(
-                "Sharpe",
-                stats["Sharpe"],
-                delta="Good" if stats["Sharpe"] > 1 else "Low",
-            )
+            r1[0].metric("Sharpe", stats["Sharpe"])
             r1[1].metric("Sortino", stats["Sortino"])
             r1[2].metric("Calmar", stats["Calmar"])
             r1[3].metric("Win Rate", f"{stats['Win_Rate']}%")
@@ -1484,14 +1344,33 @@ def main():
             r3 = st.columns(4)
             r3[0].metric("Avg Win", f"+{stats['Avg_Win']}%")
             r3[1].metric("Avg Loss", f"-{stats['Avg_Loss']}%")
-            r3[2].metric("Total Return", f"{stats['Total_Return']}%")
-            r3[3].metric("Kelly (theoretical)", f"{stats['Kelly']}%")
+            r3[2].metric("Kelly %", f"{stats['Kelly']}")
+            r3[3].metric("Total Return", f"{stats['Total_Return']}%")
 
-            c_eq, c_tr = st.columns([1.4, 1.6])
-            with c_eq:
-                st.plotly_chart(plot_equity(eq), use_container_width=True)
-            with c_tr:
-                st.markdown("**Trades Table**")
+            st.markdown("---")
+
+            if show_equity_curve and "Equity" in stats:
+                st.markdown("#### Equity Curve & Drawdown")
+                st.plotly_chart(plot_equity(stats["Equity"]), use_container_width=True)
+
+            if show_ret_dist and not dft.empty:
+                st.markdown("#### Trade Return Distribution")
+                import plotly.express as px
+                fig_ret = px.histogram(
+                    dft,
+                    x="Ret_Pct",
+                    nbins=30,
+                    title="Distribution of Trade Returns (%)",
+                )
+                fig_ret.update_layout(
+                    template="plotly_dark",
+                    paper_bgcolor="#07090f",
+                    plot_bgcolor="#0d1117",
+                )
+                st.plotly_chart(fig_ret, use_container_width=True)
+
+            if show_trades_table and not dft.empty:
+                st.markdown("#### Trades")
                 st.dataframe(
                     dft[
                         [
@@ -1506,87 +1385,73 @@ def main():
                         ]
                     ],
                     use_container_width=True,
-                    height=320,
+                    height=260,
                 )
 
-            qsum = summarize_trades(dft)
-            with st.expander("Advanced Trade Analytics", expanded=True):
-                c1, c2 = st.columns(2)
-                with c1:
-                    if not qsum:
-                        st.write("No trades.")
-                    else:
-                        st.markdown("**PnL by Exit Reason**")
-                        st.dataframe(qsum["by_reason"], use_container_width=True)
-                with c2:
-                    if not qsum:
-                        pass
-                    else:
-                        st.markdown("**PnL by Side (Win/Loss)**")
-                        st.dataframe(qsum["by_side"], use_container_width=True)
-
-                if st.checkbox("Show Trade Return Distribution", value=True):
-                    fig_dist = trade_distribution_chart(dft)
-                    if fig_dist is not None:
-                        st.plotly_chart(fig_dist, use_container_width=True)
-
-                if st.checkbox("Show Monthly Returns Heatmap/Table", value=True):
-                    mr = monthly_returns_table(dft)
-                    if not mr.empty:
-                        st.dataframe(mr, use_container_width=True)
-
-    # =====================================================
+    # -----------------------------------------------------
     # AUTO TRADE
-    # =====================================================
+    # -----------------------------------------------------
     with tab_at:
-        st.subheader("Auto Trade (Paper + Shoonya Stub)")
-        c1, c2 = st.columns(2)
+        st.markdown("### Auto Trade (Paper + Shoonya Stub)")
+
+        c1, c2, c3 = st.columns(3)
         with c1:
-            st.toggle(
-                "Activate Auto Trade (Paper)",
-                value=st.session_state["at_active"],
-                key="at_active",
-            )
-            risk_at = st.number_input(
-                "Risk per trade (INR)", value=2000, step=500, key="at_risk_auto"
-            )
-            if st.button("Check Exits (Paper)"):
-                paper_check_exits(risk_at)
-                st.success("Checked exits on open paper positions.")
+            mode = st.selectbox("Mode", ["paper", "shoonya"], index=0)
+            st.session_state["at_mode"] = mode
         with c2:
-            st.metric("Paper PnL (INR)", round(st.session_state["at_pnl"], 2))
-            st.markdown("**Open Positions (Paper)**")
-            if st.session_state["at_pos"]:
-                st.json(st.session_state["at_pos"])
-            else:
-                st.write("No open positions.")
+            risk_per_trade = st.number_input("Risk per trade (INR)", value=2000, step=500)
+        with c3:
+            if st.button("Check Exits (Paper)"):
+                paper_check_exits(risk_per_trade)
+                st.success("Checked exits for open positions.")
 
-        st.markdown("---")
-        st.markdown("**Activity Log**")
-        if st.session_state["at_log"]:
-            for line in reversed(st.session_state["at_log"][-100:]):
-                st.write(line)
+        st.markdown("#### Open Positions")
+        if st.session_state["at_pos"]:
+            st.dataframe(
+                pd.DataFrame(st.session_state["at_pos"]).T,
+                use_container_width=True,
+                height=220,
+            )
         else:
-            st.write("No activity yet.")
+            st.info("No open positions.")
 
-    # =====================================================
+        st.markdown("#### Auto Trade Log")
+        if st.session_state["at_log"]:
+            for line in reversed(st.session_state["at_log"][-50:]):
+                st.markdown(f"- {line}")
+        else:
+            st.info("No activity yet.")
+
+        st.metric("Cumulative PnL (Paper)", f"INR {st.session_state['at_pnl']:.2f}")
+
+    # -----------------------------------------------------
     # GUIDE
-    # =====================================================
+    # -----------------------------------------------------
     with tab_g:
-        st.subheader("Guide / How to Use")
-        st.markdown(
+        st.markdown("### Sniper Terminal v3 – Guide")
+        st.write(
             """
-- **Screener**: Scans NIFTY50 / NIFTY200 / custom tickers for RSI+MACD dual divergences, BB squeeze, OFI, and patterns.
-- **Backtest (Quant+)**:
-  - Run a single backtest with your chosen ticker, timeframe, years, swing bars, and ATR trail.
-  - See full performance stats, equity curve, drawdown, trade table, and advanced analytics.
-  - Use the **Quant Optimization Module** to sweep over swing bars and ATR trail values and find robust parameter sets.
-- **Auto Trade**:
-  - Paper engine that simulates entries and exits based on your own signals.
-  - Shoonya stub is ready to be wired to your live API when you decide.
+**Core Ideas**
+
+- Dual divergence engine (RSI + MACD Histogram)
+- BB Squeeze + Keltner Channels
+- AVWAP + anchored VWAP bands
+- Order Flow Imbalance (OFI)
+- Mark Minervini VCP pattern (visual + screener columns)
+
+**Panels**
+
+- **Screener**: Scan NIFTY universes for high-quality long setups.
+- **Backtest & Quant Lab**: Test the divergence system with your risk, trail, and swing parameters.
+- **Auto Trade**: Paper engine + Shoonya stub for future live integration.
+- **Guide**: Quick reference for how the system works.
+
+VCP is currently **informational only**:
+- Shown as `VCP_Flag` and `VCP_Stage` in the screener.
+- Marked as a diamond pivot on the price chart.
+- Not yet used as a filter in backtest logic (can be added later if you want).
 """
         )
-
 
 if __name__ == "__main__":
     main()
