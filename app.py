@@ -6,7 +6,7 @@ import plotly.express as px
 
 from sklearn.linear_model import LogisticRegression
 
-from shoonya_api import ShoonyaAPI  # your separate file
+from shoonya_api import ShoonyaAPI, build_token_maps  # your separate file
 
 
 # =========================
@@ -140,28 +140,22 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     df["ATR"] = tr.rolling(14).mean()
 
-    # Simple AVWAP from first bar
     cum_vol = df["Volume"].cumsum()
     cum_vp = (df["Close"] * df["Volume"]).cumsum()
     df["AVWAP"] = cum_vp / (cum_vol + 1e-9)
 
-    # Squeeze (placeholder)
     df["Squeeze"] = False
     df["Squeeze_Fire"] = False
-
-    # VCP flag (placeholder)
     df["VCP_Flag"] = False
 
     return df
 
 
 def compute_divergences(df: pd.DataFrame, bars: int = 5):
-    # Placeholder divergence logic
     return [], []
 
 
 def signal_quality(df: pd.DataFrame, idx: int):
-    # Placeholder quality scoring
     return {"total": 80}
 
 
@@ -681,11 +675,6 @@ def handle_shoonya_tick(msg: dict):
                         })
                         update_equity_curve()
 
-        # Optional trailing SL (requires df)
-        # df_last = load_data(sym, "15m", years=1)
-        # df_last = compute_indicators(df_last)
-        # update_trailing_sl(sym, lp, df_last)
-
     except Exception:
         pass
 
@@ -760,18 +749,47 @@ with tab_at:
                 vendor_code=vcode,
                 api_secret=secret,
             )
-            st.success("Shoonya Login Successful")
+            if res.get("stat") == "Ok":
+                st.success("Shoonya Login Successful")
+            else:
+                st.error(f"Login Failed: {res.get('emsg')}")
         except Exception as e:
             st.error(f"Login Failed: {e}")
+
+    st.markdown("### 🔐 Shoonya Status Panel")
+
+    api = st.session_state["shoonya"]
+
+    if api.susertoken:
+        st.success("🟢 Logged in to Shoonya")
+    else:
+        st.error("🔴 Not logged in")
+
+    if api.ws_connected:
+        st.success("🟢 WebSocket Connected")
+    else:
+        st.warning("🟡 WebSocket Not Connected")
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        if st.button("Test Heartbeat"):
+            st.write(api.heartbeat())
+    with c2:
+        if st.button("Test Connection (get_limits)"):
+            st.write(api.get_limits())
+    with c3:
+        if st.button("Fetch Orderbook"):
+            st.write(api.get_orderbook())
+    with c4:
+        if st.button("Fetch Positions"):
+            st.write(api.get_positions())
 
     st.markdown("#### Build Token Map Automatically")
 
     if st.button("Download NSE Master & Build Token Map"):
         try:
-            api = st.session_state["shoonya"]
-            master = api.download_master("NSE")
-            from shoonya_api import build_token_maps  # if you put it there
-            token_map, symbol_map = build_token_maps(master)
+            df_master = api.download_master("NSE")
+            token_map, symbol_map = build_token_maps(df_master)
             st.session_state["token_map"] = token_map
             st.session_state["symbol_map"] = symbol_map
             st.success(f"Token map built. {len(token_map)} instruments loaded.")
@@ -1155,3 +1173,11 @@ compute_vol_regime()
 
 if st.session_state.get("algo_running", False):
     auto_entry_engine()
+
+api = st.session_state["shoonya"]
+if api.susertoken:
+    api.heartbeat()
+    try:
+        api.auto_refresh_token()
+    except Exception:
+        pass
