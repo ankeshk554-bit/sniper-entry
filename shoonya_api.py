@@ -24,7 +24,7 @@ import pandas as pd
 from websocket import WebSocketApp
 
 
-BASE_URL = "https://api.shoonya.com/NorenWClientTP"
+BASE_URL = "https://shoonyatrade.finvasia.com/NorenWClientTP/"
 WS_URL = "wss://api.shoonya.com/NorenWSTP/"
 
 
