@@ -5,3 +5,4 @@ plotly
 scikit-learn
 requests
 websocket-client
+yfinance
