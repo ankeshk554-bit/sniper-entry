@@ -17,3 +17,15 @@ class ShoonyaAPI:
     def place_order(self, **kwargs):
         # your order placement logic
         pass
+def build_token_maps(master_df):
+    token_map = {}
+    symbol_map = {}
+
+    for _, row in master_df.iterrows():
+        token = str(row["Token"])
+        symbol = row["TradingSymbol"]
+
+        token_map[token] = symbol
+        symbol_map[symbol] = token
+
+    return token_map, symbol_map
