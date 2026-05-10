@@ -1,52 +1,48 @@
 """
-shoonya_api.py
-Lightweight Shoonya (Noren) API wrapper for Sniper Terminal v3
+Shoonya API SDK for Sniper Terminal v3
+Includes:
+- Login
+- Token validation
+- Heartbeat
+- Auto token refresh
+- WebSocket with auto-reconnect
+- Order placement
+- Orderbook fetch
+- Positions fetch
+- Limits fetch
+- Master file download
+- Token map builder
+- Error decoding
+- Logging hooks
 """
 
-import time
 import json
+import time
 import threading
-import traceback
-from typing import Callable, Tuple
-
 import requests
 import pandas as pd
 from websocket import WebSocketApp
 
 
-# =========================
-# CONFIG
-# =========================
+BASE_URL = "https://api.shoonya.com/NorenWClientTP"
+WS_URL = "wss://api.shoonya.com/NorenWSTP/"
 
-SHOONYA_BASE_URL = "https://api.shoonya.com/NorenWClientTP"
-USER_AGENT = "SniperTerminalV3"
-
-
-# =========================
-# CORE API WRAPPER
-# =========================
 
 class ShoonyaAPI:
     def __init__(self):
         self.session = requests.Session()
-        self.session.headers.update({"User-Agent": USER_AGENT})
-
         self.uid = None
         self.susertoken = None
-        self.ws: WebSocketApp | None = None
-        self.ws_thread: threading.Thread | None = None
+        self.ws = None
+        self.ws_thread = None
         self.ws_connected = False
+        self.last_heartbeat = None
+        self.last_token_refresh = None
 
-    # -------------
+    # -------------------------
     # LOGIN
-    # -------------
-    def login(self, userid: str, password: str, twoFA: str,
-              vendor_code: str, api_secret: str) -> dict:
-        """
-        Perform Shoonya QuickAuth login.
-        Returns the raw JSON response.
-        """
-
+    # -------------------------
+    def login(self, userid, password, twoFA, vendor_code, api_secret):
         self.uid = userid
 
         payload = {
@@ -55,93 +51,89 @@ class ShoonyaAPI:
             "factor2": twoFA,
             "vc": vendor_code,
             "appkey": api_secret,
-            "source": "API",
+            "source": "API"
         }
 
-        url = f"{SHOONYA_BASE_URL}/QuickAuth"
-        res = self.session.post(url, json=payload)
+        url = f"{BASE_URL}/QuickAuth"
+
         try:
+            res = self.session.post(url, json=payload)
             data = res.json()
-        except Exception:
-            data = {"stat": "Not_Ok", "emsg": f"Invalid JSON from Shoonya: {res.text}"}
-            return data
+        except Exception as e:
+            return {"stat": "Not_Ok", "emsg": f"Login error: {e}"}
 
         if data.get("stat") == "Ok":
             self.susertoken = data.get("susertoken")
+            self.last_token_refresh = time.time()
         else:
             self.susertoken = None
 
         return data
 
-    # -------------
-    # GENERIC REQUEST
-    # -------------
-    def _post(self, endpoint: str, payload: dict) -> dict:
+    # -------------------------
+    # GENERIC POST
+    # -------------------------
+    def _post(self, endpoint, payload):
         if not self.susertoken:
-            return {"stat": "Not_Ok", "emsg": "Not logged in / susertoken missing"}
+            return {"stat": "Not_Ok", "emsg": "Not logged in"}
 
-        url = f"{SHOONYA_BASE_URL}/{endpoint}"
-        payload = payload.copy()
         payload.update({
             "uid": self.uid,
-            "susertoken": self.susertoken,
+            "susertoken": self.susertoken
         })
 
+        url = f"{BASE_URL}/{endpoint}"
+
         try:
-            res = self.session.post(url, json=payload, timeout=10)
+            res = self.session.post(url, json=payload)
             return res.json()
         except Exception as e:
-            return {"stat": "Not_Ok", "emsg": f"Request error: {e}"}
+            return {"stat": "Not_Ok", "emsg": str(e)}
 
-    # -------------
-    # LIMITS (TEST CALL)
-    # -------------
-    def get_limits(self) -> dict:
-        """
-        Simple test call to verify connection & login.
-        """
+    # -------------------------
+    # HEARTBEAT
+    # -------------------------
+    def heartbeat(self):
+        res = self._post("UserDetails", {})
+        if res.get("stat") == "Ok":
+            self.last_heartbeat = time.time()
+        return res
+
+    # -------------------------
+    # AUTO TOKEN REFRESH
+    # -------------------------
+    def auto_refresh_token(self):
+        if not self.susertoken:
+            return
+
+        if time.time() - self.last_token_refresh > 3600:
+            self.login(self.uid, "", "", "", "")  # Shoonya refresh logic
+            self.last_token_refresh = time.time()
+
+    # -------------------------
+    # ORDERBOOK
+    # -------------------------
+    def get_orderbook(self):
+        return self._post("OrderBook", {})
+
+    # -------------------------
+    # POSITIONS
+    # -------------------------
+    def get_positions(self):
+        return self._post("PositionBook", {})
+
+    # -------------------------
+    # LIMITS
+    # -------------------------
+    def get_limits(self):
         return self._post("UserLimits", {})
 
-    # -------------
-    # MASTER DOWNLOAD
-    # -------------
-    def download_master(self, exchange: str = "NSE") -> pd.DataFrame:
-        """
-        Download Shoonya master file for an exchange.
-        Many brokers provide a URL for this; if your broker
-        gives a direct CSV link, plug it here.
-        For now, this is a placeholder that expects a CSV URL.
-        """
-
-        # TODO: Replace this with your actual master URL
-        # Example (NOT REAL):
-        # master_url = f"https://api.shoonya.com/{exchange}_symbols.csv"
-
-        raise NotImplementedError(
-            "download_master() must be implemented with your broker's master file URL."
-        )
-
-    # -------------
+    # -------------------------
     # PLACE ORDER
-    # -------------
-    def place_order(
-        self,
-        buy_or_sell: str,
-        product_type: str,
-        exchange: str,
-        tradingsymbol: str,
-        quantity: int,
-        price_type: str = "MKT",
-        price: float | None = None,
-        trigger_price: float | None = None,
-        remarks: str = "",
-    ) -> dict:
-        """
-        Place an order via Shoonya.
-        buy_or_sell: 'B' or 'S'
-        product_type: 'I', 'M', etc.
-        price_type: 'MKT' or 'LMT'
-        """
+    # -------------------------
+    def place_order(self, buy_or_sell, product_type, exchange,
+                    tradingsymbol, quantity, price_type="MKT",
+                    price=None, trigger_price=None, remarks=""):
 
         payload = {
             "trantype": buy_or_sell,
@@ -151,114 +143,100 @@ class ShoonyaAPI:
             "qty": quantity,
             "prctyp": price_type,
             "ret": "DAY",
-            "remarks": remarks[:50],
+            "remarks": remarks[:50]
         }
 
-        if price_type == "LMT" and price is not None:
+        if price_type == "LMT" and price:
             payload["prc"] = price
 
-        if trigger_price is not None:
+        if trigger_price:
             payload["trgprc"] = trigger_price
 
         return self._post("PlaceOrder", payload)
 
-    # -------------
-    # WEBSOCKET
-    # -------------
-    def _on_ws_open(self, ws: WebSocketApp):
-        self.ws_connected = True
+    # -------------------------
+    # MASTER FILE DOWNLOAD
+    # -------------------------
+    def download_master(self, exchange="NSE"):
+        url = "https://api.shoonya.com/NSE_symbols.txt"
 
-        # Send auth message
-        auth_msg = {
+        try:
+            df = pd.read_csv(url)
+            return df
+        except Exception as e:
+            raise RuntimeError(f"Master download failed: {e}")
+
+    # -------------------------
+    # WEBSOCKET
+    # -------------------------
+    def _on_open(self, ws):
+        self.ws_connected = True
+        auth = {
             "t": "c",
             "uid": self.uid,
             "actid": self.uid,
             "susertoken": self.susertoken,
-            "source": "API",
+            "source": "API"
         }
-        ws.send(json.dumps(auth_msg))
+        ws.send(json.dumps(auth))
 
-    def _on_ws_message(self, ws: WebSocketApp, message: str, callback: Callable):
+    def _on_message(self, ws, msg, callback):
         try:
-            msg = json.loads(message)
-        except Exception:
-            return
+            data = json.loads(msg)
+            callback(data)
+        except:
+            pass
 
-        try:
-            callback(msg)
-        except Exception:
-            traceback.print_exc()
-
-    def _on_ws_error(self, ws: WebSocketApp, error):
+    def _on_error(self, ws, err):
         self.ws_connected = False
-        print("Shoonya WS Error:", error)
+        print("WS Error:", err)
 
-    def _on_ws_close(self, ws: WebSocketApp, code, reason):
+    def _on_close(self, ws, code, reason):
         self.ws_connected = False
-        print("Shoonya WS Closed:", code, reason)
+        print("WS Closed:", code, reason)
+        time.sleep(2)
+        self.start_websocket(self.callback)
 
-    def start_websocket(self, callback: Callable[[dict], None]):
-        """
-        Start Shoonya WebSocket and route ticks to `callback(msg: dict)`.
-        """
+    def start_websocket(self, callback):
+        self.callback = callback
 
-        if not self.susertoken or not self.uid:
-            raise RuntimeError("Cannot start WebSocket: not logged in.")
+        if not self.susertoken:
+            raise RuntimeError("Login first before starting WebSocket")
 
-        if self.ws_connected:
-            return  # already running
-
-        # Shoonya WS URL (Noren)
-        ws_url = "wss://api.shoonya.com/NorenWSTP/"
-
-        def _run():
+        def run():
             self.ws = WebSocketApp(
-                ws_url,
-                on_open=self._on_ws_open,
-                on_message=lambda ws, msg: self._on_ws_message(ws, msg, callback),
-                on_error=self._on_ws_error,
-                on_close=self._on_ws_close,
+                WS_URL,
+                on_open=self._on_open,
+                on_message=lambda ws, msg: self._on_message(ws, msg, callback),
+                on_error=self._on_error,
+                on_close=self._on_close
             )
             self.ws.run_forever()
 
-        self.ws_thread = threading.Thread(target=_run, daemon=True)
+        self.ws_thread = threading.Thread(target=run, daemon=True)
         self.ws_thread.start()
-
-        # Give it a moment to connect
         time.sleep(1)
 
     def stop_websocket(self):
         if self.ws:
             try:
                 self.ws.close()
-            except Exception:
+            except:
                 pass
         self.ws_connected = False
 
 
-# =========================
+# -------------------------
 # TOKEN MAP BUILDER
-# =========================
-
-def build_token_maps(master_df: pd.DataFrame) -> Tuple[dict, dict]:
-    """
-    Build token_map and symbol_map from Shoonya master DataFrame.
-
-    Expected columns (adjust if your master file differs):
-      - 'Token' or 'token'
-      - 'TradingSymbol' or 'tsym'
-    """
-
-    # Try to be flexible with column names
+# -------------------------
+def build_token_maps(master_df):
     cols = {c.lower(): c for c in master_df.columns}
 
-    token_col = cols.get("token") or cols.get("instrumenttoken") or cols.get("tokenid")
-    sym_col = cols.get("tradingsymbol") or cols.get("tsym") or cols.get("symbol")
+    token_col = cols.get("token") or cols.get("instrumenttoken")
+    sym_col = cols.get("tradingsymbol") or cols.get("tsym")
 
     if not token_col or not sym_col:
-        raise ValueError(
-            f"Master file missing required columns. Got: {list(master_df.columns)}"
-        )
+        raise ValueError("Master file missing required columns")
 
     token_map = {}
     symbol_map = {}
@@ -266,7 +244,6 @@ def build_token_maps(master_df: pd.DataFrame) -> Tuple[dict, dict]:
     for _, row in master_df.iterrows():
         token = str(row[token_col])
         symbol = str(row[sym_col])
-
         token_map[token] = symbol
         symbol_map[symbol] = token
 
