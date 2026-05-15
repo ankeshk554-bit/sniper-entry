@@ -1,8 +1,7 @@
-streamlit
-pandas
-numpy
-plotly
-scikit-learn
-requests
-websocket-client
-yfinance
+streamlit==1.32.0
+yfinance==0.2.40
+pandas==2.2.1
+numpy==1.26.4
+plotly==5.19.0
+requests==2.31.0
+pytz==2024.1
