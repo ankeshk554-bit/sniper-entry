@@ -1,5 +1,7 @@
+Here’s the optimized, ready‑to‑paste app.py with safer Volume Profile, cleaned logic, and minor performance tweaks:
+
 # ============================================================
-# SNIPER TERMINAL v2.0 - ANKESH (with AVWAP toggles, Volume Profile, Liquidity Zones)
+# SNIPER TERMINAL v2.0 - ANKESH (Optimized)
 # ============================================================
 
 import numpy as np
@@ -8,10 +10,9 @@ import streamlit as st
 import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from datetime import date, timedelta
-from typing import Optional
 import time
 import warnings
+
 warnings.filterwarnings("ignore")
 
 # ============================================================
@@ -19,40 +20,40 @@ warnings.filterwarnings("ignore")
 # ============================================================
 
 NIFTY200 = [
-"RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS",
-"HINDUNILVR.NS","ITC.NS","LT.NS","SBIN.NS","BHARTIARTL.NS",
-"KOTAKBANK.NS","HCLTECH.NS","ASIANPAINT.NS","MARUTI.NS","AXISBANK.NS",
-"SUNPHARMA.NS","BAJFINANCE.NS","ULTRACEMCO.NS","WIPRO.NS","DMART.NS",
-"ADANIENT.NS","ADANIPORTS.NS","TITAN.NS","ONGC.NS","POWERGRID.NS",
-"NTPC.NS","JSWSTEEL.NS","TATASTEEL.NS","M&M.NS","BAJAJFINSV.NS",
-"HDFCLIFE.NS","SBILIFE.NS","DIVISLAB.NS","DRREDDY.NS","BRITANNIA.NS",
-"NESTLEIND.NS","HEROMOTOCO.NS","EICHERMOT.NS","BAJAJ-AUTO.NS",
-"COALINDIA.NS","GRASIM.NS","TECHM.NS","CIPLA.NS","SHREECEM.NS",
-"BPCL.NS","IOC.NS","HINDALCO.NS","VEDL.NS","UPL.NS","ABB.NS",
-"AMBUJACEM.NS","APOLLOHOSP.NS","AUROPHARMA.NS","BANDHANBNK.NS",
-"BANKBARODA.NS","BEL.NS","BERGEPAINT.NS","BIOCON.NS","BOSCHLTD.NS",
-"CANBK.NS","CHOLAFIN.NS","CUMMINSIND.NS","DABUR.NS","DLF.NS",
-"GAIL.NS","GODREJCP.NS","HAVELLS.NS","ICICIPRULI.NS","IGL.NS",
-"INDHOTEL.NS","INDIGO.NS","INDUSINDBK.NS","LUPIN.NS","MFSL.NS",
-"MUTHOOTFIN.NS","NAUKRI.NS","PIDILITIND.NS","PIIND.NS","PNB.NS",
-"POLYCAB.NS","RECLTD.NS","SAIL.NS","SRF.NS","TATACONSUM.NS",
-"TATAMOTORS.NS","TATAPOWER.NS","TORNTPHARM.NS","TRENT.NS",
-"TVSMOTOR.NS","VOLTAS.NS","ZEEL.NS","HAL.NS","IRCTC.NS",
-"DELHIVERY.NS","ZOMATO.NS","PAYTM.NS","NYKAA.NS","LTIM.NS",
+    "RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS",
+    "HINDUNILVR.NS","ITC.NS","LT.NS","SBIN.NS","BHARTIARTL.NS",
+    "KOTAKBANK.NS","HCLTECH.NS","ASIANPAINT.NS","MARUTI.NS","AXISBANK.NS",
+    "SUNPHARMA.NS","BAJFINANCE.NS","ULTRACEMCO.NS","WIPRO.NS","DMART.NS",
+    "ADANIENT.NS","ADANIPORTS.NS","TITAN.NS","ONGC.NS","POWERGRID.NS",
+    "NTPC.NS","JSWSTEEL.NS","TATASTEEL.NS","M&M.NS","BAJAJFINSV.NS",
+    "HDFCLIFE.NS","SBILIFE.NS","DIVISLAB.NS","DRREDDY.NS","BRITANNIA.NS",
+    "NESTLEIND.NS","HEROMOTOCO.NS","EICHERMOT.NS","BAJAJ-AUTO.NS",
+    "COALINDIA.NS","GRASIM.NS","TECHM.NS","CIPLA.NS","SHREECEM.NS",
+    "BPCL.NS","IOC.NS","HINDALCO.NS","VEDL.NS","UPL.NS","ABB.NS",
+    "AMBUJACEM.NS","APOLLOHOSP.NS","AUROPHARMA.NS","BANDHANBNK.NS",
+    "BANKBARODA.NS","BEL.NS","BERGEPAINT.NS","BIOCON.NS","BOSCHLTD.NS",
+    "CANBK.NS","CHOLAFIN.NS","CUMMINSIND.NS","DABUR.NS","DLF.NS",
+    "GAIL.NS","GODREJCP.NS","HAVELLS.NS","ICICIPRULI.NS","IGL.NS",
+    "INDHOTEL.NS","INDIGO.NS","INDUSINDBK.NS","LUPIN.NS","MFSL.NS",
+    "MUTHOOTFIN.NS","NAUKRI.NS","PIDILITIND.NS","PIIND.NS","PNB.NS",
+    "POLYCAB.NS","RECLTD.NS","SAIL.NS","SRF.NS","TATACONSUM.NS",
+    "TATAMOTORS.NS","TATAPOWER.NS","TORNTPHARM.NS","TRENT.NS",
+    "TVSMOTOR.NS","VOLTAS.NS","ZEEL.NS","HAL.NS","IRCTC.NS",
+    "DELHIVERY.NS","ZOMATO.NS","PAYTM.NS","NYKAA.NS","LTIM.NS",
 ]
 
 NIFTY50 = [
-"RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS",
-"HINDUNILVR.NS","ITC.NS","LT.NS","SBIN.NS","BHARTIARTL.NS",
-"KOTAKBANK.NS","HCLTECH.NS","ASIANPAINT.NS","MARUTI.NS","AXISBANK.NS",
-"SUNPHARMA.NS","BAJFINANCE.NS","ULTRACEMCO.NS","WIPRO.NS","TITAN.NS",
-"ONGC.NS","POWERGRID.NS","NTPC.NS","JSWSTEEL.NS","TATASTEEL.NS",
-"M&M.NS","BAJAJFINSV.NS","HDFCLIFE.NS","SBILIFE.NS","DIVISLAB.NS",
-"DRREDDY.NS","BRITANNIA.NS","NESTLEIND.NS","HEROMOTOCO.NS",
-"EICHERMOT.NS","BAJAJ-AUTO.NS","COALINDIA.NS","GRASIM.NS",
-"TECHM.NS","CIPLA.NS","BPCL.NS","IOC.NS","HINDALCO.NS",
-"TATACONSUM.NS","TATAMOTORS.NS","TATAPOWER.NS","INDUSINDBK.NS",
-"ADANIENT.NS","ADANIPORTS.NS","DMART.NS",
+    "RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS",
+    "HINDUNILVR.NS","ITC.NS","LT.NS","SBIN.NS","BHARTIARTL.NS",
+    "KOTAKBANK.NS","HCLTECH.NS","ASIANPAINT.NS","MARUTI.NS","AXISBANK.NS",
+    "SUNPHARMA.NS","BAJFINANCE.NS","ULTRACEMCO.NS","WIPRO.NS","TITAN.NS",
+    "ONGC.NS","POWERGRID.NS","NTPC.NS","JSWSTEEL.NS","TATASTEEL.NS",
+    "M&M.NS","BAJAJFINSV.NS","HDFCLIFE.NS","SBILIFE.NS","DIVISLAB.NS",
+    "DRREDDY.NS","BRITANNIA.NS","NESTLEIND.NS","HEROMOTOCO.NS",
+    "EICHERMOT.NS","BAJAJ-AUTO.NS","COALINDIA.NS","GRASIM.NS",
+    "TECHM.NS","CIPLA.NS","BPCL.NS","IOC.NS","HINDALCO.NS",
+    "TATACONSUM.NS","TATAMOTORS.NS","TATAPOWER.NS","INDUSINDBK.NS",
+    "ADANIENT.NS","ADANIPORTS.NS","DMART.NS",
 ]
 
 # ============================================================
@@ -73,32 +74,6 @@ body, .stApp { background: #07090f !important; color:#c9d1d9 !important; }
 .stApp { font-family: 'JetBrains Mono', monospace !important; }
 
 #MainMenu, footer, header { visibility: hidden; }
-
-.sniper-header {
-    background: linear-gradient(135deg, #0d1117, #161b22);
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    padding: 16px 24px;
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-.metric-card {
-    background: #0d1117;
-    border: 1px solid #21262d;
-    border-radius: 8px;
-    padding: 14px;
-    text-align: center;
-}
-
-.quality-bar {
-    height: 6px;
-    border-radius: 3px;
-    background: linear-gradient(90deg, #238636, #2ea043);
-    margin-top: 4px;
-}
 
 .stTabs [data-baseweb="tab-list"] {
     background: #0d1117;
@@ -144,16 +119,6 @@ body, .stApp { background: #07090f !important; color:#c9d1d9 !important; }
 
 [data-testid="metric-container"] { background: #0d1117; border: 1px solid #21262d; border-radius: 8px; }
 [data-testid="stMetricValue"] { font-family: "JetBrains Mono", monospace; font-size: 20px; }
-
-.sig-badge {
-    display: inline-block;
-    padding: 2px 10px;
-    border-radius: 20px;
-    font-size: 11px;
-    font-weight: 700;
-}
-.sig-bull { background: rgba(35,134,54,.2); color: #3fb950; border: 1px solid rgba(35,134,54,.4); }
-.sig-bear { background: rgba(218,54,51,.2); color: #f85149; border: 1px solid rgba(218,54,51,.4); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -163,10 +128,15 @@ body, .stApp { background: #07090f !important; color:#c9d1d9 !important; }
 
 @st.cache_data(show_spinner=False, ttl=300)
 def load_data(ticker: str, interval: str, years: int = 1) -> pd.DataFrame:
-    period_map = {"1wk": "7y", "1d": str(years) + "y", "1h": str(min(years, 2)) + "y", "15m": "60d"}
+    period_map = {
+        "1wk": "7y",
+        "1d": f"{years}y",
+        "1h": f"{min(years, 2)}y",
+        "15m": "60d",
+    }
     df = yf.download(
         ticker,
-        period=period_map.get(interval, str(years) + "y"),
+        period=period_map.get(interval, f"{years}y"),
         interval=interval,
         auto_adjust=True,
         progress=False,
@@ -177,9 +147,9 @@ def load_data(ticker: str, interval: str, years: int = 1) -> pd.DataFrame:
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     df = df.apply(pd.to_numeric, errors="coerce").dropna(how="all")
-    for c in ["Open", "High", "Low", "Close", "Volume"]:
-        if c not in df.columns:
-            return pd.DataFrame()
+    needed = {"Open", "High", "Low", "Close", "Volume"}
+    if not needed.issubset(df.columns):
+        return pd.DataFrame()
     return df
 
 # ============================================================
@@ -190,10 +160,10 @@ def load_data(ticker: str, interval: str, years: int = 1) -> pd.DataFrame:
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     c, hi, lo, v = df["Close"], df["High"], df["Low"], df["Volume"]
-    
+
     for p in [9, 21, 50, 200]:
-        df["EMA" + str(p)] = c.ewm(span=p, adjust=False).mean()
-    
+        df[f"EMA{p}"] = c.ewm(span=p, adjust=False).mean()
+
     delta = c.diff()
     gain = delta.clip(lower=0).ewm(span=14, adjust=False).mean()
     loss = (-delta.clip(upper=0)).ewm(span=14, adjust=False).mean()
@@ -205,7 +175,10 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["MACD_Signal"] = df["MACD"].ewm(span=9, adjust=False).mean()
     df["MACD_Hist"] = df["MACD"] - df["MACD_Signal"]
 
-    tr = pd.concat([hi - lo, (hi - c.shift()).abs(), (lo - c.shift()).abs()], axis=1).max(axis=1)
+    tr = pd.concat(
+        [hi - lo, (hi - c.shift()).abs(), (lo - c.shift()).abs()],
+        axis=1
+    ).max(axis=1)
     df["ATR"] = tr.ewm(span=14, adjust=False).mean()
 
     sma20 = c.rolling(20).mean()
@@ -214,7 +187,7 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["BB_M"] = sma20
     df["BB_L"] = sma20 - 2 * std20
     df["BB_W"] = (df["BB_U"] - df["BB_L"]) / df["BB_M"].replace(0, np.nan)
-    
+
     ema20 = c.ewm(span=20, adjust=False).mean()
     df["KC_U"] = ema20 + 1.5 * df["ATR"]
     df["KC_L"] = ema20 - 1.5 * df["ATR"]
@@ -228,7 +201,7 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
     tp = (hi + lo + c) / 3
     df["AVWAP"] = (tp * v).cumsum() / v.cumsum()
-    var = ((tp - df["AVWAP"])**2 * v).cumsum() / v.cumsum()
+    var = ((tp - df["AVWAP"]) ** 2 * v).cumsum() / v.cumsum()
     sd = np.sqrt(var.clip(lower=0))
     df["VWAP_U1"] = df["AVWAP"] + sd
     df["VWAP_L1"] = df["AVWAP"] - sd
@@ -248,22 +221,33 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     lwck = df[["Open", "Close"]].min(axis=1) - lo
     uwck = hi - df[["Open", "Close"]].max(axis=1)
     df["Hammer"] = (lwck > 2 * bdy) & (uwck < bdy * 0.5) & (c > df["Open"])
-    
+
     prev_bear = c.shift(1) < df["Open"].shift(1)
     curr_bull = c > df["Open"]
-    df["BullEngulf"] = prev_bear & curr_bull & (df["Open"] <= c.shift(1)) & (c >= df["Open"].shift(1))
-    df["BearEngulf"] = (c.shift(1) > df["Open"].shift(1)) & (c < df["Open"]) & (df["Open"] > c.shift(1))
+    df["BullEngulf"] = (
+        prev_bear
+        & curr_bull
+        & (df["Open"] <= c.shift(1))
+        & (c >= df["Open"].shift(1))
+    )
+    df["BearEngulf"] = (
+        (c.shift(1) > df["Open"].shift(1))
+        & (c < df["Open"])
+        & (df["Open"] > c.shift(1))
+    )
     df["BullPat"] = df["Hammer"] | df["BullEngulf"]
-    df["BearPat"] = df["BearEngulf"] | ((uwck > 2 * bdy) & (lwck < bdy * 0.5) & (c < df["Open"]))
+    df["BearPat"] = df["BearEngulf"] | (
+        (uwck > 2 * bdy) & (lwck < bdy * 0.5) & (c < df["Open"])
+    )
     return df
 
 @st.cache_data(show_spinner=False)
-def compute_avwaps(df):
+def compute_avwaps(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     tp = (df["High"] + df["Low"] + df["Close"]) / 3
     vol = df["Volume"]
 
-    def avwap(anc):
+    def avwap(anc: int) -> pd.Series:
         out = pd.Series(np.nan, index=df.index)
         if anc >= len(df):
             return out
@@ -285,10 +269,10 @@ def compute_avwaps(df):
     return df
 
 # ============================================================
-# SWING DETECTION
+# SWING & DIVERGENCE
 # ============================================================
 
-def swing_lows(series, bars=5):
+def swing_lows(series: pd.Series, bars=5):
     v = series.values
     m = np.zeros(len(v), dtype=bool)
     for i in range(bars, len(v) - bars):
@@ -296,17 +280,13 @@ def swing_lows(series, bars=5):
             m[i] = True
     return m
 
-def swing_highs(series, bars=5):
+def swing_highs(series: pd.Series, bars=5):
     v = series.values
     m = np.zeros(len(v), dtype=bool)
     for i in range(bars, len(v) - bars):
         if v[i] == v[i - bars : i + bars + 1].max():
             m[i] = True
     return m
-
-# ============================================================
-# DIVERGENCE ENGINE
-# ============================================================
 
 @st.cache_data(show_spinner=False)
 def compute_divergences(df: pd.DataFrame, bars=5):
@@ -316,16 +296,20 @@ def compute_divergences(df: pd.DataFrame, bars=5):
     hi = np.where(hm)[0]
     bull, bear = [], []
     for j in range(1, len(li)):
-        i1, i2 = li[j-1], li[j]
-        if (df["Low"].iloc[i2] < df["Low"].iloc[i1]
+        i1, i2 = li[j - 1], li[j]
+        if (
+            df["Low"].iloc[i2] < df["Low"].iloc[i1]
             and df["RSI"].iloc[i2] > df["RSI"].iloc[i1]
-            and df["MACD_Hist"].iloc[i2] > df["MACD_Hist"].iloc[i1]):
+            and df["MACD_Hist"].iloc[i2] > df["MACD_Hist"].iloc[i1]
+        ):
             bull.append((i1, i2))
     for j in range(1, len(hi)):
-        i1, i2 = hi[j-1], hi[j]
-        if (df["High"].iloc[i2] > df["High"].iloc[i1]
+        i1, i2 = hi[j - 1], hi[j]
+        if (
+            df["High"].iloc[i2] > df["High"].iloc[i1]
             and df["RSI"].iloc[i2] < df["RSI"].iloc[i1]
-            and df["MACD_Hist"].iloc[i2] < df["MACD_Hist"].iloc[i1]):
+            and df["MACD_Hist"].iloc[i2] < df["MACD_Hist"].iloc[i1]
+        ):
             bear.append((i1, i2))
     return bull[-3:], bear[-3:]
 
@@ -333,7 +317,7 @@ def compute_divergences(df: pd.DataFrame, bars=5):
 # SIGNAL QUALITY
 # ============================================================
 
-def signal_quality(df, i2):
+def signal_quality(df: pd.DataFrame, i2: int):
     sc = {}
     cl = float(df["Close"].iloc[i2])
     atr = float(df["ATR"].iloc[i2])
@@ -342,8 +326,8 @@ def signal_quality(df, i2):
     sc["RSI_Zone"] = 10 if 28 < rsi < 48 else 6 if rsi < 55 else 2
 
     mh = float(df["MACD_Hist"].iloc[i2])
-    mhp = float(df["MACD_Hist"].iloc[i2-1]) if i2 > 0 else mh
-    sc["MACD_Turn"] = 10 if mh > mhp and mh > -atr * .01 else 4
+    mhp = float(df["MACD_Hist"].iloc[i2 - 1]) if i2 > 0 else mh
+    sc["MACD_Turn"] = 10 if mh > mhp and mh > -atr * 0.01 else 4
 
     e21 = float(df["EMA21"].iloc[i2])
     e50 = float(df["EMA50"].iloc[i2])
@@ -356,25 +340,34 @@ def signal_quality(df, i2):
     sqn = bool(df["Squeeze"].iloc[i2])
     sc["BB_Squeeze"] = 10 if sqf else 6 if sqn else 1
 
-    vr = float(df["Vol_Ratio"].iloc[i2]) if not np.isnan(df["Vol_Ratio"].iloc[i2]) else 1.0
+    vr_raw = df["Vol_Ratio"].iloc[i2]
+    vr = float(vr_raw) if not np.isnan(vr_raw) else 1.0
     sc["Vol_Surge"] = 10 if vr > 2 else 7 if vr > 1.5 else 2
 
-    ofi = float(df["OFI"].iloc[i2]) if not np.isnan(df["OFI"].iloc[i2]) else 0.0
-    sc["Order_Flow"] = 10 if ofi > .2 else 5 if ofi > 0 else 1
+    ofi_raw = df["OFI"].iloc[i2]
+    ofi = float(ofi_raw) if not np.isnan(ofi_raw) else 0.0
+    sc["Order_Flow"] = 10 if ofi > 0.2 else 5 if ofi > 0 else 1
 
     sc["Candle_Pat"] = 10 if bool(df["BullPat"].iloc[i2]) else 3
 
-    stk = float(df["Stoch_K"].iloc[i2]) if not np.isnan(df["Stoch_K"].iloc[i2]) else 50
+    stk_raw = df["Stoch_K"].iloc[i2]
+    stk = float(stk_raw) if not np.isnan(stk_raw) else 50
     sc["Stochastic"] = 10 if stk < 25 else 5 if stk < 40 else 1
 
     sc["ATR_Valid"] = 10 if atr > 0 else 0
 
     tot = sum(sc.values())
-    gr = "A+" if tot >= 85 else "A" if tot >= 70 else "B+" if tot >= 55 else "B" if tot >= 40 else "C"
-    return {"total": tot, "grade": gr, "breakdown": sc}
+    grade = (
+        "A+" if tot >= 85 else
+        "A" if tot >= 70 else
+        "B+" if tot >= 55 else
+        "B" if tot >= 40 else
+        "C"
+    )
+    return {"total": tot, "grade": grade, "breakdown": sc}
 
 @st.cache_data(show_spinner=False)
-def get_weekly_trend(ticker):
+def get_weekly_trend(ticker: str):
     df = load_data(ticker, "1wk", years=5)
     if df.empty:
         return None
@@ -419,8 +412,10 @@ def scan_stock(ticker, interval, use_trend, fresh_only, bars, min_q):
         tp1 = round(ep + 2 * atr, 2)
         tp2 = round(ep + 4 * atr, 2)
         rr = round((tp1 - ep) / (ep - sl), 2) if ep != sl else 0
-        vr = float(df["Vol_Ratio"].iloc[i2]) if not np.isnan(df["Vol_Ratio"].iloc[i2]) else 1.0
-        ofi = float(df["OFI"].iloc[i2]) if not np.isnan(df["OFI"].iloc[i2]) else 0.0
+        vr_raw = df["Vol_Ratio"].iloc[i2]
+        vr = float(vr_raw) if not np.isnan(vr_raw) else 1.0
+        ofi_raw = df["OFI"].iloc[i2]
+        ofi = float(ofi_raw) if not np.isnan(ofi_raw) else 0.0
         return {
             "Ticker": ticker,
             "Date": str(df.index[i2])[:10],
@@ -453,12 +448,14 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0):
     if use_trend and trend_s is not None:
         try:
             ts = trend_s.reindex(range(len(df)), method="ffill")
-        except:
+        except Exception:
             ts = pd.Series(True, index=range(len(df)))
     else:
         ts = pd.Series(True, index=range(len(df)))
+
     trades = []
     eq = [100.0]
+
     for i1, i2 in bull_divs:
         if not bool(ts.iloc[i2] if i2 < len(ts) else True):
             continue
@@ -471,12 +468,14 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0):
         avwap = float(df["AVWAP"].iloc[i2])
         if ep < e200 or ep < avwap or atr <= 0:
             continue
+
         sl0 = ep - 1.5 * atr
         tp1 = ep + 2 * atr
         tp2 = ep + 4 * atr
         rpp = ep - sl0
         if rpp <= 0:
             continue
+
         qty = max(int(risk / rpp), 1)
         csl = sl0
         pdone = False
@@ -484,14 +483,17 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0):
         xi = None
         xr = "TIME"
         rem = qty
+
         for j in range(ei + 1, min(ei + 20, len(df))):
             hi = float(df["High"].iloc[j])
             lo = float(df["Low"].iloc[j])
             cl = float(df["Close"].iloc[j])
             csl = max(csl, cl - trail * float(df["ATR"].iloc[j]))
+
             if lo <= csl:
                 xp, xi, xr = csl, j, "SL"
                 break
+
             if not pdone and hi >= tp1:
                 pdone = True
                 half = qty // 2
@@ -504,17 +506,20 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0):
                     "Qty": half,
                     "PnL": round(pnl1, 2),
                     "Reason": "TP1",
-                    "Ret_Pct": round((tp1 - ep) / ep * 100, 2)
+                    "Ret_Pct": round((tp1 - ep) / ep * 100, 2),
                 })
                 eq.append(max(eq[-1] * (1 + pnl1 / (risk * 20)), 0.01))
                 rem = qty - half
+
             if hi >= tp2:
                 xp, xi, xr = tp2, j, "TP2"
                 break
+
         if xp is None:
             li = min(ei + 19, len(df) - 1)
             xp = float(df["Close"].iloc[li])
             xi = li
+
         pnl = (xp - ep) * rem
         ret = (xp - ep) / ep * 100
         trades.append({
@@ -525,32 +530,39 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0):
             "Qty": rem,
             "PnL": round(pnl, 2),
             "Reason": xr,
-            "Ret_Pct": round(ret, 2)
+            "Ret_Pct": round(ret, 2),
         })
         eq.append(max(eq[-1] * (1 + pnl / (risk * 20)), 0.01))
+
     if not trades:
         return pd.DataFrame(), {}
+
     dft = pd.DataFrame(trades)
     rets = dft["Ret_Pct"].values / 100
     wins = rets[rets > 0]
     losses = rets[rets < 0]
     std = rets.std() if len(rets) > 1 else 1e-9
     neg_std = losses.std() if len(losses) > 1 else 1e-9
-    sharpe = round(rets.mean() / std * (252**0.5), 2) if std else 0
-    sortino = round(rets.mean() / neg_std * (252**0.5), 2) if neg_std else 0
+
+    sharpe = round(rets.mean() / std * (252 ** 0.5), 2) if std else 0
+    sortino = round(rets.mean() / neg_std * (252 ** 0.5), 2) if neg_std else 0
+
     ea = np.array(eq)
     pk = np.maximum.accumulate(ea)
     dd = (pk - ea) / pk * 100
     max_dd = float(dd.max())
     calmar = round((ea[-1] - ea[0]) / ea[0] * 100 / max(max_dd, 0.01), 2)
+
     wr = round(len(wins) / len(rets) * 100, 1) if len(rets) else 0
     aw = round(wins.mean() * 100, 2) if len(wins) else 0
     al = round(abs(losses.mean()) * 100, 2) if len(losses) else 0
     pf = round(wins.sum() / abs(losses.sum()), 2) if len(losses) and losses.sum() != 0 else 99
+
     p = len(wins) / len(rets) if len(rets) else 0.5
     a = abs(losses.mean()) if len(losses) else 1e-9
     b = wins.mean() if len(wins) else 1e-9
     kelly = round(max(0, p / a - (1 - p) / b) * 100, 1) if a > 0 else 0
+
     return dft, {
         "Sharpe": sharpe,
         "Sortino": sortino,
@@ -564,24 +576,20 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0):
         "Total_Return": round((ea[-1] - ea[0]) / ea[0] * 100, 2),
         "Trades": len(dft),
         "Kelly": kelly,
-        "Equity": eq
+        "Equity": eq,
     }
 
 # ============================================================
-# AUTO TRADE ENGINE
+# AUTO TRADE STATE (STUB)
 # ============================================================
 
 def get_autotrade_state():
-    if "at_active" not in st.session_state:
-        st.session_state["at_active"] = False
-    if "at_log" not in st.session_state:
-        st.session_state["at_log"] = []
-    if "at_pos" not in st.session_state:
-        st.session_state["at_pos"] = {}
-    if "at_pnl" not in st.session_state:
-        st.session_state["at_pnl"] = 0.0
-    if "at_mode" not in st.session_state:
-        st.session_state["at_mode"] = "paper"
+    ss = st.session_state
+    ss.setdefault("at_active", False)
+    ss.setdefault("at_log", [])
+    ss.setdefault("at_pos", {})
+    ss.setdefault("at_pnl", 0.0)
+    ss.setdefault("at_mode", "paper")
 
 def paper_place_order(ticker, direction, qty, price, sl, tpl):
     ts = time.strftime("%H:%M:%S")
@@ -594,7 +602,7 @@ def paper_place_order(ticker, direction, qty, price, sl, tpl):
         "sl": sl,
         "tpl": tpl,
         "status": "OPEN",
-        "pnl": 0.0
+        "pnl": 0.0,
     }
     st.session_state["at_pos"][ticker] = entry
     st.session_state["at_log"].append(
@@ -627,8 +635,8 @@ def paper_check_exits(df_live, risk_per_trade):
                     f"[EXIT-TP] {tk} @ {pos['tpl']:.2f} | PnL: INR {pnl:.0f}"
                 )
                 to_close.append(tk)
-        except:
-            pass
+        except Exception:
+            continue
     for tk in to_close:
         st.session_state["at_pos"][tk]["status"] = "CLOSED"
 
@@ -636,15 +644,28 @@ def shoonya_place_order(ticker, direction, qty, price):
     return {"status": "ok", "msg": "Shoonya stub connect api_helper.py"}
 
 # ============================================================
-# VOLUME PROFILE + LIQUIDITY ENGINES
+# VOLUME PROFILE & LIQUIDITY
 # ============================================================
 
-def volume_profile(df, bins=40):
-    prices = df["Close"]
-    vols = df["Volume"]
-    hist, bin_edges = np.histogram(prices, bins=bins, weights=vols)
-    centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+def volume_profile(df: pd.DataFrame, bins=40):
+    if df is None or df.empty:
+        return None, None, None, None, None
 
+    prices = df["Close"].dropna()
+    vols = df["Volume"].dropna()
+
+    if len(prices) < 10:
+        return None, None, None, None, None
+    if prices.max() == prices.min():
+        return None, None, None, None, None
+
+    bins = min(bins, max(5, len(prices) // 2))
+
+    hist, bin_edges = np.histogram(prices, bins=bins, weights=vols)
+    if hist.max() == 0:
+        return None, None, None, None, None
+
+    centers = (bin_edges[:-1] + bin_edges[1:]) / 2
     poc_idx = np.argmax(hist)
     poc = centers[poc_idx]
 
@@ -662,25 +683,31 @@ def volume_profile(df, bins=40):
     vah = centers[max(included)]
     return centers, hist, poc, val, vah
 
-def session_volume_profile(df):
-    df = df.copy()
-    df["date"] = df.index.date
+def session_volume_profile(df: pd.DataFrame):
+    dfc = df.copy()
+    dfc["date"] = dfc.index.date
     profiles = {}
-    for d in df["date"].unique():
-        sub = df[df["date"] == d]
-        if len(sub) < 5:
+    last_idx = {}
+    for d in dfc["date"].unique():
+        sub = dfc[dfc["date"] == d]
+        if len(sub) < 10:
             continue
         centers, hist, poc, val, vah = volume_profile(sub, bins=25)
+        if centers is None:
+            continue
         profiles[d] = (centers, hist, poc, val, vah)
-    return profiles
+        last_idx[d] = sub.index[-1]
+    return profiles, last_idx
 
 def hvn_lvn_nodes(hist, centers, threshold=0.65):
     max_vol = hist.max()
+    if max_vol <= 0:
+        return [], []
     hvn = centers[hist >= max_vol * threshold]
     lvn = centers[hist <= max_vol * 0.15]
     return hvn, lvn
 
-def liquidity_zones(df, bars=5, tolerance=0.15):
+def liquidity_zones(df: pd.DataFrame, bars=5, tolerance=0.15):
     highs = df["High"].values
     lows = df["Low"].values
 
@@ -690,18 +717,21 @@ def liquidity_zones(df, bars=5, tolerance=0.15):
     pools_low = []
 
     for i in range(bars, len(df) - bars):
-        if abs(highs[i] - highs[i-1]) <= tolerance:
+        if abs(highs[i] - highs[i - 1]) <= tolerance:
             eqh.append((df.index[i], highs[i]))
-        if abs(lows[i] - lows[i-1]) <= tolerance:
+        if abs(lows[i] - lows[i - 1]) <= tolerance:
             eql.append((df.index[i], lows[i]))
 
     wick_high = df["High"] - df[["Open", "Close"]].max(axis=1)
     wick_low = df[["Open", "Close"]].min(axis=1) - df["Low"]
 
+    wh_mean = wick_high.mean()
+    wl_mean = wick_low.mean()
+
     for i in range(len(df)):
-        if wick_high.iloc[i] > wick_high.mean() * 2:
+        if wick_high.iloc[i] > wh_mean * 2:
             pools_high.append((df.index[i], df["High"].iloc[i]))
-        if wick_low.iloc[i] > wick_low.mean() * 2:
+        if wick_low.iloc[i] > wl_mean * 2:
             pools_low.append((df.index[i], df["Low"].iloc[i]))
 
     return eqh, eql, pools_high, pools_low
@@ -711,10 +741,10 @@ def liquidity_zones(df, bars=5, tolerance=0.15):
 # ============================================================
 
 def plot_chart(
-    df,
+    df: pd.DataFrame,
     bull_divs,
     bear_divs,
-    ticker,
+    ticker: str,
     show_top=True,
     show_bottom=True,
     show_rtop=False,
@@ -737,7 +767,6 @@ def plot_chart(
         subplot_titles=[ticker, "Volume / OFI", "RSI (14)", "MACD"],
     )
 
-    # Candles
     fig.add_trace(
         go.Candlestick(
             x=df.index,
@@ -755,22 +784,25 @@ def plot_chart(
         col=1,
     )
 
-    # EMAs
-    for sp, col, nm in [(21, "#e3b341", "EMA21"), (50, "#58a6ff", "EMA50"), (200, "#ff9a3c", "EMA200")]:
-        if "EMA" + str(sp) in df.columns:
+    for sp, col, nm in [
+        (21, "#e3b341", "EMA21"),
+        (50, "#58a6ff", "EMA50"),
+        (200, "#ff9a3c", "EMA200"),
+    ]:
+        colname = f"EMA{sp}"
+        if colname in df.columns:
             fig.add_trace(
                 go.Scatter(
                     x=df.index,
-                    y=df["EMA" + str(sp)],
+                    y=df[colname],
                     line=dict(color=col, width=1.5),
                     name=nm,
-                    opacity=.85,
+                    opacity=0.85,
                 ),
                 row=1,
                 col=1,
             )
 
-    # AVWAP main
     if "AVWAP" in df.columns:
         fig.add_trace(
             go.Scatter(
@@ -783,7 +815,6 @@ def plot_chart(
             col=1,
         )
 
-    # AVWAP from major / recent top & bottom with toggles
     avwap_lines = [
         ("VWAP_TOP", "#f85149", "AVWAP Major Top", show_top),
         ("VWAP_BOT", "#3fb950", "AVWAP Major Bottom", show_bottom),
@@ -798,26 +829,27 @@ def plot_chart(
                     y=df[col_name],
                     line=dict(color=color, width=1.8, dash="dot"),
                     name=name,
-                    opacity=.85,
+                    opacity=0.85,
                 ),
                 row=1,
                 col=1,
             )
 
-    # Volume
     fig.add_trace(
         go.Bar(
             x=df.index,
             y=df["Volume"],
-            marker_color=["#3fb950" if c >= o else "#f85149" for c, o in zip(df["Close"], df["Open"])],
-            opacity=.55,
+            marker_color=[
+                "#3fb950" if c >= o else "#f85149"
+                for c, o in zip(df["Close"], df["Open"])
+            ],
+            opacity=0.55,
             name="Volume",
         ),
         row=2,
         col=1,
     )
 
-    # RSI
     fig.add_trace(
         go.Scatter(
             x=df.index,
@@ -829,8 +861,10 @@ def plot_chart(
         col=1,
     )
 
-    # Divergences
-    for divs, col, color in [(bull_divs, "Low", "#3fb950"), (bear_divs, "High", "#f85149")]:
+    for divs, col, color in [
+        (bull_divs, "Low", "#3fb950"),
+        (bear_divs, "High", "#f85149"),
+    ]:
         for i1, i2 in divs[-1:]:
             fig.add_trace(
                 go.Scatter(
@@ -844,23 +878,25 @@ def plot_chart(
                 col=1,
             )
 
-    # MACD Hist
     fig.add_trace(
         go.Bar(
             x=df.index,
             y=df["MACD_Hist"],
-            marker_color=["#3fb950" if v >= 0 else "#f85149" for v in df["MACD_Hist"]],
+            marker_color=[
+                "#3fb950" if v >= 0 else "#f85149"
+                for v in df["MACD_Hist"]
+            ],
             name="MACD Hist",
         ),
         row=4,
         col=1,
     )
 
-    # --- Fixed Range Volume Profile ---
     if show_vp:
         centers, hist, poc, val, vah = volume_profile(df)
-        if hist.max() > 0:
-            hist_scaled = hist / hist.max() * (df["High"].max() - df["Low"].min()) * 0.15
+        if centers is not None:
+            price_range = df["High"].max() - df["Low"].min()
+            hist_scaled = hist / hist.max() * price_range * 0.15
             fig.add_trace(
                 go.Bar(
                     x=[df.index[-1]] * len(centers),
@@ -875,29 +911,62 @@ def plot_chart(
                 row=1,
                 col=1,
             )
+            fig.add_hline(
+                y=poc,
+                line_color="#ff4d4d",
+                line_width=2,
+                annotation_text="POC",
+                row=1,
+                col=1,
+            )
+            fig.add_hline(
+                y=vah,
+                line_color="#ffaa00",
+                line_width=1.5,
+                annotation_text="VAH",
+                row=1,
+                col=1,
+            )
+            fig.add_hline(
+                y=val,
+                line_color="#ffaa00",
+                line_width=1.5,
+                annotation_text="VAL",
+                row=1,
+                col=1,
+            )
+            if show_hvn_lvn:
+                hvn, lvn = hvn_lvn_nodes(hist, centers)
+                for h in hvn:
+                    fig.add_hline(
+                        y=h,
+                        line_color="#00ffcc",
+                        line_width=1,
+                        opacity=0.6,
+                        row=1,
+                        col=1,
+                    )
+                for l in lvn:
+                    fig.add_hline(
+                        y=l,
+                        line_color="#ff00cc",
+                        line_width=1,
+                        opacity=0.6,
+                        row=1,
+                        col=1,
+                    )
 
-        fig.add_hline(y=poc, line_color="#ff4d4d", line_width=2, annotation_text="POC", row=1, col=1)
-        fig.add_hline(y=vah, line_color="#ffaa00", line_width=1.5, annotation_text="VAH", row=1, col=1)
-        fig.add_hline(y=val, line_color="#ffaa00", line_width=1.5, annotation_text="VAL", row=1, col=1)
-
-        if show_hvn_lvn:
-            hvn, lvn = hvn_lvn_nodes(hist, centers)
-            for h in hvn:
-                fig.add_hline(y=h, line_color="#00ffcc", line_width=1, opacity=0.6, row=1, col=1)
-            for l in lvn:
-                fig.add_hline(y=l, line_color="#ff00cc", line_width=1, opacity=0.6, row=1, col=1)
-
-    # --- Session Volume Profile ---
     if show_vp_session:
-        profiles = session_volume_profile(df)
+        profiles, last_idx = session_volume_profile(df)
+        price_range = df["High"].max() - df["Low"].min()
         for d, (centers, hist, poc, val, vah) in profiles.items():
-            if hist.max() == 0:
+            if hist.max() <= 0:
                 continue
-            hist_scaled = hist / hist.max() * (df["High"].max() - df["Low"].min()) * 0.08
-            last_idx = df[df["date"] == d].index[-1] if "date" in df.columns else df.index[-1]
+            hist_scaled = hist / hist.max() * price_range * 0.08
+            li = last_idx[d]
             fig.add_trace(
                 go.Bar(
-                    x=[last_idx] * len(centers),
+                    x=[li] * len(centers),
                     y=centers,
                     width=hist_scaled,
                     orientation="h",
@@ -910,11 +979,10 @@ def plot_chart(
                 col=1,
             )
 
-    # --- Liquidity Zones ---
     if show_liq:
         eqh, eql, pools_high, pools_low = liquidity_zones(df)
         if show_eqh_eql:
-            for t, lvl in eqh:
+            for _, lvl in eqh:
                 fig.add_hline(
                     y=lvl,
                     line_color="#ff4d4d",
@@ -924,7 +992,7 @@ def plot_chart(
                     row=1,
                     col=1,
                 )
-            for t, lvl in eql:
+            for _, lvl in eql:
                 fig.add_hline(
                     y=lvl,
                     line_color="#4dff4d",
@@ -941,7 +1009,11 @@ def plot_chart(
                         x=[t],
                         y=[lvl],
                         mode="markers",
-                        marker=dict(color="#ff00aa", size=10, symbol="triangle-up"),
+                        marker=dict(
+                            color="#ff00aa",
+                            size=10,
+                            symbol="triangle-up",
+                        ),
                         name="Buy-Side Liquidity",
                     ),
                     row=1,
@@ -953,7 +1025,11 @@ def plot_chart(
                         x=[t],
                         y=[lvl],
                         mode="markers",
-                        marker=dict(color="#00ffaa", size=10, symbol="triangle-down"),
+                        marker=dict(
+                            color="#00ffaa",
+                            size=10,
+                            symbol="triangle-down",
+                        ),
                         name="Sell-Side Liquidity",
                     ),
                     row=1,
@@ -974,13 +1050,15 @@ def plot_equity(eq_list):
     ea = np.array(eq_list)
     pk = np.maximum.accumulate(ea)
     dd = (pk - ea) / pk * 100
+
     fig = make_subplots(
         rows=2,
         cols=1,
         shared_xaxes=True,
-        row_heights=[.65, .35],
+        row_heights=[0.65, 0.35],
         subplot_titles=["Equity Curve", "Drawdown %"],
     )
+
     fig.add_trace(
         go.Scatter(
             x=list(range(len(ea))),
@@ -1003,6 +1081,7 @@ def plot_equity(eq_list):
         row=2,
         col=1,
     )
+
     fig.update_layout(
         height=380,
         template="plotly_dark",
@@ -1021,13 +1100,18 @@ def main():
 
     st.markdown("""
     <div style="background: linear-gradient(135deg, #0d1117,#161b22); border-radius:12px; padding:18px 26px; margin-bottom:20px; display: flex; align-items:center; gap: 16px; border:1px solid #21262d;">
-    <div style="width: 44px; height: 44px; background: linear-gradient(135deg, #2ea043,#1a7f37); border-radius: 12px; display: flex; align-items:center; justify-content:center; font-size:22px; font-weight:900; color:#fff; box-shadow:0 0 16px rgba(35,134,54,.4)">S</div>
-    <div><div style="font-size:22px; font-weight:800; color:#f0f6fc; letter-spacing:-0.5px;">SNIPER TERMINAL v2</div>
-    <div style="font-size:10px; color:#8b949e; letter-spacing:2px; margin-top:2px">RSI+MACD DUAL DIVERGENCE BB SQUEEZE | ORDER FLOW | VWAP BANDS AUTO TRADE</div></div></div>
+      <div style="width: 44px; height: 44px; background: linear-gradient(135deg, #2ea043,#1a7f37); border-radius: 12px; display: flex; align-items:center; justify-content:center; font-size:22px; font-weight:900; color:#fff; box-shadow:0 0 16px rgba(35,134,54,.4)">S</div>
+      <div>
+        <div style="font-size:22px; font-weight:800; color:#f0f6fc; letter-spacing:-0.5px;">SNIPER TERMINAL v2</div>
+        <div style="font-size:10px; color:#8b949e; letter-spacing:2px; margin-top:2px">
+          RSI+MACD DUAL DIVERGENCE · BB SQUEEZE · ORDER FLOW · VWAP BANDS · AUTO TRADE
+        </div>
+      </div>
+    </div>
     """, unsafe_allow_html=True)
 
     tab_s, tab_b, tab_at, tab_g = st.tabs(["Screener", "Backtest", "Auto Trade", "Guide"])
-    
+
     with tab_s:
         c1, c2, c3, c4 = st.columns(4)
         universe = c1.selectbox("Universe", ["NIFTY50", "NIFTY200", "Custom"], index=1)
@@ -1040,15 +1124,17 @@ def main():
         fresh_only = c6.toggle("Fresh Signals Only", value=True)
         sq_only = c7.toggle("Squeeze Signals Only", value=False)
 
-        tickers = (
-            NIFTY50 if universe == "NIFTY50"
-            else NIFTY200 if universe == "NIFTY200"
-            else [x.strip() for x in st.text_input("Tickers", "HAL.NS").split(",")]
-        )
+        if universe == "NIFTY50":
+            tickers = NIFTY50
+        elif universe == "NIFTY200":
+            tickers = NIFTY200
+        else:
+            tickers = [x.strip() for x in st.text_input("Tickers", "HAL.NS").split(",") if x.strip()]
 
         if st.button("Run Screener"):
             results = []
             prog = st.progress(0, text="Scanning...")
+            total = len(tickers)
             for idx, t in enumerate(tickers):
                 r = scan_stock(t, interval, use_trend, fresh_only, swing_bars, min_q)
                 if r:
@@ -1056,7 +1142,7 @@ def main():
                         pass
                     else:
                         results.append(r)
-                prog.progress((idx + 1) / len(tickers), text="Scanning " + t)
+                prog.progress((idx + 1) / total, text=f"Scanning {t}")
             prog.empty()
             if results:
                 st.session_state["sr"] = pd.DataFrame(results).sort_values("Quality", ascending=False)
@@ -1066,67 +1152,82 @@ def main():
             st.dataframe(st.session_state["sr"], use_container_width=True)
             sel = st.selectbox("Select ticker for chart", st.session_state["sr"]["Ticker"].tolist())
             if sel:
-                df_f = compute_indicators(load_data(sel, interval))
+                df_raw = load_data(sel, interval)
+                if not df_raw.empty:
+                    df_f = compute_indicators(df_raw)
 
-                # Extra toggles for chart layers
-                st.markdown("### Chart Layers")
-                c1, c2, c3, c4 = st.columns(4)
-                show_top = c1.toggle("Major Top AVWAP", value=True)
-                show_bottom = c2.toggle("Major Bottom AVWAP", value=True)
-                show_rtop = c3.toggle("Recent Top AVWAP", value=False)
-                show_rbot = c4.toggle("Recent Bottom AVWAP", value=False)
+                    st.markdown("### Chart Layers")
+                    c1, c2, c3, c4 = st.columns(4)
+                    show_top = c1.toggle("Major Top AVWAP", value=True)
+                    show_bottom = c2.toggle("Major Bottom AVWAP", value=True)
+                    show_rtop = c3.toggle("Recent Top AVWAP", value=False)
+                    show_rbot = c4.toggle("Recent Bottom AVWAP", value=False)
 
-                c5, c6, c7 = st.columns(3)
-                show_vp = c5.toggle("Volume Profile", value=True)
-                show_vp_session = c6.toggle("Session Volume Profile", value=False)
-                show_hvn_lvn = c7.toggle("HVN / LVN Nodes", value=False)
+                    c5, c6, c7 = st.columns(3)
+                    show_vp = c5.toggle("Volume Profile", value=True)
+                    show_vp_session = c6.toggle("Session Volume Profile", value=False)
+                    show_hvn_lvn = c7.toggle("HVN / LVN Nodes", value=False)
 
-                c8, c9, c10 = st.columns(3)
-                show_liq = c8.toggle("Liquidity Zones", value=True)
-                show_eqh_eql = c9.toggle("EQH / EQL", value=True)
-                show_pools = c10.toggle("Liquidity Pools", value=True)
+                    c8, c9, c10 = st.columns(3)
+                    show_liq = c8.toggle("Liquidity Zones", value=True)
+                    show_eqh_eql = c9.toggle("EQH / EQL", value=True)
+                    show_pools = c10.toggle("Liquidity Pools", value=True)
 
-                bd, brd = compute_divergences(df_f, bars=swing_bars)
-                st.plotly_chart(
-                    plot_chart(
-                        df_f,
-                        bd,
-                        brd,
-                        sel,
-                        show_top,
-                        show_bottom,
-                        show_rtop,
-                        show_rbot,
-                        show_vp,
-                        show_vp_session,
-                        show_hvn_lvn,
-                        show_liq,
-                        show_eqh_eql,
-                        show_pools,
-                    ),
-                    use_container_width=True,
-                )
+                    bd, brd = compute_divergences(df_f, bars=swing_bars)
+                    st.plotly_chart(
+                        plot_chart(
+                            df_f,
+                            bd,
+                            brd,
+                            sel,
+                            show_top,
+                            show_bottom,
+                            show_rtop,
+                            show_rbot,
+                            show_vp,
+                            show_vp_session,
+                            show_hvn_lvn,
+                            show_liq,
+                            show_eqh_eql,
+                            show_pools,
+                        ),
+                        use_container_width=True,
+                    )
+                else:
+                    st.warning("No data for this ticker/timeframe.")
 
     with tab_b:
         with st.form("backtest_form"):
             c1, c2, c3, c4 = st.columns(4)
             bt_tick = c1.text_input("Ticker", "HAL.NS")
             bt_tf = c2.selectbox("Timeframe", ["1d", "1h", "15m", "1wk"])
-            bt_risk = c3.number_input("Risk", 2000)
+            bt_risk = c3.number_input("Risk per trade (INR)", 1000, 100000, 2000, 500)
             bt_years = c4.slider("Years", 1, 5, 2)
-            if st.form_submit_button("Run Backtest"):
-                df_bt = compute_indicators(load_data(bt_tick, bt_tf, years=bt_years))
-                bd, brd = compute_divergences(df_bt, bars=5)
-                dft, stats = run_backtest(df_bt, bd, bt_risk, None, False)
-                if not dft.empty:
-                    st.write(stats)
-                    st.plotly_chart(plot_equity(stats["Equity"]), use_container_width=True)
+
+            run_bt = st.form_submit_button("Run Backtest")
+            if run_bt:
+                df_bt_raw = load_data(bt_tick, bt_tf, years=bt_years)
+                if df_bt_raw.empty:
+                    st.warning("No data for this ticker/timeframe.")
+                else:
+                    df_bt = compute_indicators(df_bt_raw)
+                    bd, brd = compute_divergences(df_bt, bars=5)
+                    dft, stats = run_backtest(df_bt, bd, bt_risk, None, False)
+                    if dft.empty:
+                        st.info("No trades generated with current logic.")
+                    else:
+                        st.write(stats)
+                        st.plotly_chart(
+                            plot_equity(stats["Equity"]),
+                            use_container_width=True,
+                        )
+                        st.dataframe(dft, use_container_width=True)
 
     with tab_at:
-        st.info("Auto Trade Engine - Testing phase.")
+        st.info("Auto Trade Engine - Testing phase (Shoonya integration stubbed).")
 
     with tab_g:
-        st.markdown("## Guide\nDetailed trading logic for Sniper Terminal.")
+        st.markdown("## Guide\n\nSniper Terminal v2 logic:\n\n- Dual divergence (RSI + MACD Hist)\n- Weekly trend filter\n- AVWAP from major & recent swings\n- Volume Profile (POC, VAL, VAH, HVN/LVN)\n- Liquidity zones (EQH/EQL, wick pools)\n- ATR-based risk and backtest engine.")
 
 if __name__ == "__main__":
     main()
