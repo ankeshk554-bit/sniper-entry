@@ -1501,4 +1501,4 @@ def page_screener():
 
         ticker = row["Ticker"]
         df_full = load_data(ticker, interval)
-        df_full = compute_indicators(df_full
+        df_full = compute_indicators(df_full)
