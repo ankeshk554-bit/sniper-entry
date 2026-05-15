@@ -55,7 +55,7 @@ NIFTY50 = [
 ]
 
 # ============================================================
-# STREAMLIT CONFIG
+# STREAMLIT CONFIG & GLOBAL STATE
 # ============================================================
 
 st.set_page_config(
@@ -66,6 +66,10 @@ st.set_page_config(
 
 if "theme" not in st.session_state:
     st.session_state["theme"] = "Dark"
+if "total_capital" not in st.session_state:
+    st.session_state["total_capital"] = 200000.0
+if "risk_pct" not in st.session_state:
+    st.session_state["risk_pct"] = 1.0
 
 # ============================================================
 # THEME ENGINE (DARK / LIGHT, ROYAL GOLD - CHAMPAGNE)
@@ -196,10 +200,10 @@ def apply_theme():
     )
 
 # ============================================================
-# DATA LAYER
+# DATA LAYER (LIVE FROM YAHOO)
 # ============================================================
 
-@st.cache_data(show_spinner=False, ttl=300)
+@st.cache_data(show_spinner=False, ttl=120)
 def load_data(ticker: str, interval: str, years: int = 1) -> pd.DataFrame:
     period_map = {
         "1wk": "7y",
@@ -387,7 +391,7 @@ def compute_divergences(df: pd.DataFrame, bars=5):
     return bull[-3:], bear[-3:]
 
 # ============================================================
-# SIGNAL QUALITY
+# SIGNAL QUALITY & EXPLANATION
 # ============================================================
 
 def signal_quality(df: pd.DataFrame, i2: int):
@@ -439,6 +443,73 @@ def signal_quality(df: pd.DataFrame, i2: int):
     )
     return {"total": tot, "grade": grade, "breakdown": sc}
 
+def build_analysis_text(ticker, df, i2, q, rr, vr, ofi, squeeze_fire, in_squeeze):
+    lines = []
+    cl = float(df["Close"].iloc[i2])
+    e21 = float(df["EMA21"].iloc[i2])
+    e50 = float(df["EMA50"].iloc[i2])
+    e200 = float(df["EMA200"].iloc[i2])
+    avwap = float(df["AVWAP"].iloc[i2])
+    rsi = float(df["RSI"].iloc[i2])
+    atr = float(df["ATR"].iloc[i2])
+
+    lines.append(f"• Overall quality score is {q['total']} ({q['grade']}).")
+    if cl > e21 > e50 > e200 and cl > avwap:
+        lines.append("• Price is in a strong bullish structure (above EMA21/50/200 and AVWAP).")
+    elif cl > e50 > e200:
+        lines.append("• Price is in a medium-term uptrend (above EMA50/200).")
+    else:
+        lines.append("• Price is not cleanly stacked above EMAs; trend is less ideal.")
+
+    if 30 < rsi < 50:
+        lines.append("• RSI is in a constructive zone (30–50), suggesting early trend participation.")
+    elif rsi < 30:
+        lines.append("• RSI is oversold; bounce is possible but risk of value trap exists.")
+    elif rsi > 70:
+        lines.append("• RSI is overbought; upside may be limited and risk of pullback is higher.")
+
+    if squeeze_fire:
+        lines.append("• Squeeze has just fired, indicating potential expansion in volatility and trend.")
+    elif in_squeeze:
+        lines.append("• Price is in a volatility squeeze; a strong move may be building up.")
+    else:
+        lines.append("• No active squeeze; move may be more mature or already in progress.")
+
+    if vr > 2:
+        lines.append("• Volume is more than 2x its 20-bar average, showing strong participation.")
+    elif vr > 1.5:
+        lines.append("• Volume is moderately elevated, which supports the move.")
+    else:
+        lines.append("• Volume is not significantly elevated; conviction may be lower.")
+
+    if ofi > 0.2:
+        lines.append("• Order flow is clearly positive (buyers in control).")
+    elif ofi > 0:
+        lines.append("• Order flow is slightly positive.")
+    elif ofi < -0.2:
+        lines.append("• Order flow is negative; smart money may be selling into strength.")
+    else:
+        lines.append("• Order flow is neutral; no clear dominance.")
+
+    if rr >= 2:
+        lines.append(f"• Reward-to-risk is attractive at ~{rr}R or better.")
+    elif rr >= 1.5:
+        lines.append(f"• Reward-to-risk is acceptable at ~{rr}R, but not exceptional.")
+    else:
+        lines.append(f"• Reward-to-risk is weak at ~{rr}R; consider passing or waiting for better structure.")
+
+    if q["grade"] in ["A+", "A"]:
+        lines.append("• Overall: This is a high-quality setup suitable for swing entries if risk is managed.")
+    elif q["grade"] in ["B+", "B"]:
+        lines.append("• Overall: Decent setup, but be selective with position size and entry timing.")
+    else:
+        lines.append("• Overall: Quality is low; be cautious, this may be a trap or late-stage move.")
+
+    if atr <= 0:
+        lines.append("• Caution: ATR is too low or unstable; stop placement may be unreliable.")
+
+    return "\n".join(lines)
+
 @st.cache_data(show_spinner=False)
 def get_weekly_trend(ticker: str):
     df = load_data(ticker, "1wk", years=5)
@@ -451,7 +522,7 @@ def get_weekly_trend(ticker: str):
     df["RSI"] = 100 - 100 / (1 + g / l.replace(0, np.nan))
     return (df["Close"] > df["EMA200"]) & (df["RSI"] > 50)
 
-def scan_stock(ticker, interval, use_trend, fresh_only, bars, min_q):
+def scan_stock(ticker, interval, use_trend, fresh_only, bars, min_q, total_capital, risk_pct):
     try:
         df = load_data(ticker, interval)
         if df.empty or len(df) < 100:
@@ -489,7 +560,14 @@ def scan_stock(ticker, interval, use_trend, fresh_only, bars, min_q):
         vr = float(vr_raw) if not np.isnan(vr_raw) else 1.0
         ofi_raw = df["OFI"].iloc[i2]
         ofi = float(ofi_raw) if not np.isnan(ofi_raw) else 0.0
+
+        risk_amount = total_capital * risk_pct / 100.0
+        sl_dist = max(ep - sl, 0.01)
+        pos_qty = int(risk_amount / sl_dist)
+        pos_qty = max(pos_qty, 0)
+
         return {
+            "Symbol": ticker.replace(".NS", ""),
             "Ticker": ticker,
             "Date": str(df.index[i2])[:10],
             "Entry": ep,
@@ -506,6 +584,9 @@ def scan_stock(ticker, interval, use_trend, fresh_only, bars, min_q):
             "OFI": round(ofi, 3),
             "Bull_Pat": bool(df["BullPat"].iloc[i2]),
             "ATR": round(atr, 2),
+            "Risk_%": risk_pct,
+            "Risk_Amount": round(risk_amount, 2),
+            "Position_Qty": pos_qty,
             "i1": i1,
             "i2": i2,
         }
@@ -513,10 +594,10 @@ def scan_stock(ticker, interval, use_trend, fresh_only, bars, min_q):
         return None
 
 # ============================================================
-# BACKTEST ENGINE (B1 - SOLID)
+# BACKTEST ENGINE (B1 - SOLID, RISK IN % OF CAPITAL)
 # ============================================================
 
-def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0, max_bars=20):
+def run_backtest(df, bull_divs, total_capital, risk_pct, trend_s, use_trend, trail=2.0, max_bars=20):
     df = df.reset_index(drop=True)
     if use_trend and trend_s is not None:
         try:
@@ -526,9 +607,9 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0, max_bars=20
     else:
         ts = pd.Series(True, index=range(len(df)))
 
-    slippage = 0.0005   # 0.05%
-    brokerage = 0.0003  # 0.03%
-    spread = 0.0002     # 0.02%
+    slippage = 0.0005
+    brokerage = 0.0003
+    spread = 0.0002
 
     def apply_entry_costs(price):
         return price * (1 + slippage + brokerage + spread)
@@ -537,7 +618,8 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0, max_bars=20
         return price * (1 - slippage - brokerage - spread)
 
     trades = []
-    eq = [100.0]
+    eq = [total_capital]
+    risk_amount = total_capital * risk_pct / 100.0
 
     for i1, i2 in bull_divs:
         if not bool(ts.iloc[i2] if i2 < len(ts) else True):
@@ -562,7 +644,7 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0, max_bars=20
         if rpp <= 0:
             continue
 
-        qty = max(int(risk / rpp), 1)
+        qty = max(int(risk_amount / rpp), 1)
         csl = sl0
         pdone = False
         xp = None
@@ -597,9 +679,9 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0, max_bars=20
                     "Reason": "TP1",
                     "Ret_Pct": round((apply_exit_costs(tp1) - ep) / ep * 100, 2),
                 })
-                eq.append(max(eq[-1] * (1 + pnl1 / (risk * 20)), 0.01))
+                eq.append(eq[-1] + pnl1)
                 rem = qty - half
-                csl = ep  # move SL to breakeven
+                csl = ep
 
             if hi >= tp2:
                 xp = tp2
@@ -626,7 +708,7 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0, max_bars=20
             "Reason": xr,
             "Ret_Pct": round(ret, 2),
         })
-        eq.append(max(eq[-1] * (1 + pnl / (risk * 20)), 0.01))
+        eq.append(eq[-1] + pnl)
 
     if not trades:
         return pd.DataFrame(), {}
@@ -1210,6 +1292,7 @@ def show_dashboard():
     st.dataframe(
         pd.DataFrame(
             {
+                "Symbol": ["HAL", "TCS", "RELIANCE"],
                 "Ticker": ["HAL.NS", "TCS.NS", "RELIANCE.NS"],
                 "Bias": ["Bullish", "Neutral", "Bullish"],
                 "Notes": ["Recent divergence", "Range", "Above AVWAP"],
@@ -1221,7 +1304,8 @@ def show_dashboard():
 
 def show_screener():
     st.markdown('<div class="royal-card">', unsafe_allow_html=True)
-    st.markdown("### Divergence Screener")
+    st.markdown("### Divergence Screener (Live Data)")
+
     c1, c2, c3, c4 = st.columns(4)
     universe = c1.selectbox("Universe", ["NIFTY50", "NIFTY200", "Custom"], index=1)
     interval = c2.selectbox("Timeframe", ["1d", "1h", "15m", "1wk"])
@@ -1244,7 +1328,14 @@ def show_screener():
             if x.strip()
         ]
 
-    run = st.button("Run Screener")
+    total_capital = st.session_state["total_capital"]
+    risk_pct = st.session_state["risk_pct"]
+
+    st.caption(
+        f"Position sizing uses total capital = INR {total_capital:,.0f} and risk = {risk_pct:.2f}% per trade."
+    )
+
+    run = st.button("Run Screener (Live)")
     st.markdown("</div>", unsafe_allow_html=True)
 
     if run:
@@ -1252,7 +1343,7 @@ def show_screener():
         prog = st.progress(0, text="Scanning universe...")
         total = len(tickers)
         for idx, t in enumerate(tickers):
-            r = scan_stock(t, interval, use_trend, fresh_only, swing_bars, min_q)
+            r = scan_stock(t, interval, use_trend, fresh_only, swing_bars, min_q, total_capital, risk_pct)
             if r:
                 if sq_only and not r["Squeeze_Fire"] and not r["In_Squeeze"]:
                     pass
@@ -1261,15 +1352,42 @@ def show_screener():
             prog.progress((idx + 1) / total, text=f"Scanning {t}")
         prog.empty()
         if results:
-            st.session_state["sr"] = pd.DataFrame(results).sort_values(
-                "Quality", ascending=False
-            )
+            df_res = pd.DataFrame(results).sort_values(["Grade", "Quality"], ascending=[False, False])
+            st.session_state["sr"] = df_res
             st.success(f"Found {len(results)} setups")
+        else:
+            st.session_state.pop("sr", None)
+            st.info("No qualifying setups found with current filters.")
 
     if "sr" in st.session_state:
+        df_res = st.session_state["sr"]
         st.markdown('<div class="royal-card">', unsafe_allow_html=True)
         st.markdown("### Screener Results")
-        st.dataframe(st.session_state["sr"], use_container_width=True)
+        st.dataframe(df_res, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown('<div class="royal-card">', unsafe_allow_html=True)
+        st.markdown("### Stock Analysis")
+        tickers_list = df_res["Ticker"].tolist()
+        selected = st.selectbox("Select a stock for detailed analysis", tickers_list)
+        row = df_res[df_res["Ticker"] == selected].iloc[0]
+
+        df_full = compute_indicators(load_data(selected, interval))
+        bull, _ = compute_divergences(df_full, bars=swing_bars)
+        i2 = int(row["i2"])
+        q = signal_quality(df_full, i2)
+        rr = row["R_R"]
+        vr = row["Vol_Ratio"]
+        ofi = row["OFI"]
+        squeeze_fire = row["Squeeze_Fire"]
+        in_squeeze = row["In_Squeeze"]
+
+        analysis_text = build_analysis_text(
+            selected, df_full, i2, q, rr, vr, ofi, squeeze_fire, in_squeeze
+        )
+
+        st.markdown(f"**Why this stock is on the radar ({row['Symbol']} / {selected}):**")
+        st.markdown(analysis_text)
         st.markdown("</div>", unsafe_allow_html=True)
 
 def show_chart():
@@ -1307,7 +1425,7 @@ def show_chart():
         show_eqh_eql = st.checkbox("EQH / EQL", True)
         show_pools = st.checkbox("Liquidity Pools", True)
 
-    if st.button("Load Chart"):
+    if st.button("Load Chart (Live)"):
         df_raw = load_data(ticker, interval)
         if df_raw.empty:
             st.warning("No data for this ticker/timeframe.")
@@ -1336,14 +1454,19 @@ def show_chart():
 
 def show_backtest():
     st.markdown('<div class="royal-card">', unsafe_allow_html=True)
-    st.markdown("### Backtest Engine (Solid)")
+    st.markdown("### Backtest Engine (Solid, Risk in % of Capital)")
+    total_capital = st.session_state["total_capital"]
+    risk_pct = st.session_state["risk_pct"]
+
     with st.form("backtest_form"):
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3 = st.columns(3)
         bt_tick = c1.text_input("Ticker", "HAL.NS")
         bt_tf = c2.selectbox("Timeframe", ["1d", "1h", "15m", "1wk"])
-        bt_risk = c3.number_input("Risk per trade (INR)", 1000, 100000, 2000, 500)
-        bt_years = c4.slider("Years", 1, 5, 2)
-        run_bt = st.form_submit_button("Run Backtest")
+        bt_years = c3.slider("Years", 1, 5, 2)
+        st.caption(
+            f"Using total capital = INR {total_capital:,.0f}, risk per trade = {risk_pct:.2f}% (INR {total_capital * risk_pct / 100:,.0f})."
+        )
+        run_bt = st.form_submit_button("Run Backtest (Live)")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1354,7 +1477,7 @@ def show_backtest():
             return
         df_bt = compute_indicators(df_bt_raw)
         bd, brd = compute_divergences(df_bt, bars=5)
-        dft, stats = run_backtest(df_bt, bd, bt_risk, None, False)
+        dft, stats = run_backtest(df_bt, bd, total_capital, risk_pct, None, False)
         if dft.empty:
             st.info("No trades generated with current logic.")
             return
@@ -1410,9 +1533,18 @@ def show_autotrade():
 def show_settings():
     st.markdown('<div class="royal-card">', unsafe_allow_html=True)
     st.markdown("### Settings")
-    theme = st.radio("Theme", ["Dark", "Light"], index=0 if st.session_state["theme"] == "Dark" else 1)
-    st.session_state["theme"] = theme
-    st.markdown("You can also extend this page with API keys, risk defaults, and layout presets.")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        theme = st.radio("Theme", ["Dark", "Light"], index=0 if st.session_state["theme"] == "Dark" else 1)
+        st.session_state["theme"] = theme
+    with c2:
+        total_capital = st.number_input("Total Trading Capital (INR)", min_value=10000.0, value=float(st.session_state["total_capital"]), step=10000.0)
+        risk_pct = st.number_input("Risk per Trade (%)", min_value=0.1, max_value=5.0, value=float(st.session_state["risk_pct"]), step=0.1)
+        st.session_state["total_capital"] = total_capital
+        st.session_state["risk_pct"] = risk_pct
+
+    st.caption("Risk is applied as a percentage of total capital for both screener position sizing and backtests.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ============================================================
