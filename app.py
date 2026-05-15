@@ -134,10 +134,13 @@ def compute_indicators(df: pd.DataFrame, swing_bars: int = 5) -> pd.DataFrame:
     df["RSI"] = compute_rsi(df["Close"], length=14)
     df["ATR"] = compute_atr(df, length=14)
 
-    # Volume metrics
-    df["Vol_MA20"] = df["Volume"].rolling(20).mean()
-    vol_ratio = df["Volume"] / df["Vol_MA20"].replace(0, np.nan)
-    df["Vol_Ratio"] = pd.to_numeric(vol_ratio, errors="coerce").fillna(0.0)
+    # Volume metrics (safe version)
+df["Vol_MA20"] = df["Volume"].rolling(20).mean()
+try:
+    vol_ratio = (df["Volume"].astype(float) / df["Vol_MA20"].astype(float)).replace([np.inf, -np.inf], np.nan)
+    df["Vol_Ratio"] = vol_ratio.fillna(0.0)
+except Exception:
+    df["Vol_Ratio"] = 0.0
 
     # Order flow
     df["OFI"] = compute_ofi(df)
