@@ -1353,7 +1353,14 @@ def main():
     with st.sidebar:
         st.markdown("### Risk & Capital")
         total_capital = st.number_input("Total Capital (INR)", min_value=10000.0, value=100000.0, step=5000.0)
-        risk_pct = st.slider("Risk % per Trade", 0.1, 5.0, 1.0, 0.1)
+        risk_pct = st.slider(
+    "Risk % per Trade",
+    min_value=0.1,
+    max_value=5.0,
+    value=1.0,
+    step=0.1
+)
+
         st.session_state["total_capital"] = total_capital
         st.session_state["risk_pct"] = risk_pct
 
