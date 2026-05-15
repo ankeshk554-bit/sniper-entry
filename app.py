@@ -117,7 +117,6 @@ def compute_avwap(df: pd.DataFrame) -> pd.Series:
     avwap = cum_pv / cum_vol.replace(0, np.nan)
     return avwap
 
-
 @st.cache_data(show_spinner=False)
 def compute_indicators(df: pd.DataFrame, swing_bars: int = 5) -> pd.DataFrame:
     if df is None or df.empty:
@@ -134,17 +133,16 @@ def compute_indicators(df: pd.DataFrame, swing_bars: int = 5) -> pd.DataFrame:
     df["RSI"] = compute_rsi(df["Close"], length=14)
     df["ATR"] = compute_atr(df, length=14)
 
-    # Volume metrics (safe version)
-df["Vol_MA20"] = df["Volume"].rolling(20).mean()
-try:
-    vol_ratio = (
-        df["Volume"].astype(float) /
-        df["Vol_MA20"].astype(float)
-    ).replace([np.inf, -np.inf], np.nan)
-    df["Vol_Ratio"] = vol_ratio.fillna(0.0)
-except Exception:
-    df["Vol_Ratio"] = 0.0
-
+    # Volume metrics (SAFE)
+    df["Vol_MA20"] = df["Volume"].rolling(20).mean()
+    try:
+        vol_ratio = (
+            df["Volume"].astype(float) /
+            df["Vol_MA20"].astype(float)
+        ).replace([np.inf, -np.inf], np.nan)
+        df["Vol_Ratio"] = vol_ratio.fillna(0.0)
+    except Exception:
+        df["Vol_Ratio"] = 0.0
 
     # Order flow
     df["OFI"] = compute_ofi(df)
@@ -169,37 +167,42 @@ except Exception:
     df["In_Squeeze"] = (df["BB_Upper"] < df["KC_Upper"]) & (df["BB_Lower"] > df["KC_Lower"])
     df["Squeeze_Fire"] = df["In_Squeeze"].shift(1) & (~df["In_Squeeze"])
 
-    # Simple divergence flags (price vs RSI)
+    # Divergence flags
     df["Bull_Div"] = False
     df["Bear_Div"] = False
+
     for i in range(swing_bars, len(df) - swing_bars):
-        # local lows
+        # Bullish divergence
         if (
-            df["Low"].iloc[i] < df["Low"].iloc[i - 1]
-            and df["Low"].iloc[i] < df["Low"].iloc[i + 1]
+            df["Low"].iloc[i] < df["Low"].iloc[i - 1] and
+            df["Low"].iloc[i] < df["Low"].iloc[i + 1]
         ):
             prev_idx = i - swing_bars
             if prev_idx >= 0:
                 if (
-                    df["Low"].iloc[i] < df["Low"].iloc[prev_idx]
-                    and df["RSI"].iloc[i] > df["RSI"].iloc[prev_idx]
+                    df["Low"].iloc[i] < df["Low"].iloc[prev_idx] and
+                    df["RSI"].iloc[i] > df["RSI"].iloc[prev_idx]
                 ):
                     df.at[df.index[i], "Bull_Div"] = True
 
-        # local highs
+        # Bearish divergence
         if (
-            df["High"].iloc[i] > df["High"].iloc[i - 1]
-            and df["High"].iloc[i] > df["High"].iloc[i + 1]
+            df["High"].iloc[i] > df["High"].iloc[i - 1] and
+            df["High"].iloc[i] > df["High"].iloc[i + 1]
         ):
             prev_idx = i - swing_bars
             if prev_idx >= 0:
                 if (
-                    df["High"].iloc[i] > df["High"].iloc[prev_idx]
-                    and df["RSI"].iloc[i] < df["RSI"].iloc[prev_idx]
+                    df["High"].iloc[i] > df["High"].iloc[prev_idx] and
+                    df["RSI"].iloc[i] < df["RSI"].iloc[prev_idx]
                 ):
                     df.at[df.index[i], "Bear_Div"] = True
 
     return df
+
+
+  
+
 
 
 # ============================================================
