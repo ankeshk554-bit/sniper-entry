@@ -42,6 +42,9 @@ def apply_theme():
     )
 
 
+ALL_TICKERS = sorted(list(set(NIFTY50 + NIFTY200 + NIFTY500)))
+
+
 # ============================================================
 # DATA LOADER WITH RETRY & SAFETY
 # ============================================================
@@ -98,9 +101,6 @@ def compute_atr(df: pd.DataFrame, length: int = 14) -> pd.Series:
 
 
 def compute_ofi(df: pd.DataFrame) -> pd.Series:
-    """
-    Simple order flow imbalance proxy using price change and volume.
-    """
     close = df["Close"]
     vol = df["Volume"]
     prev_close = close.shift(1)
@@ -111,9 +111,6 @@ def compute_ofi(df: pd.DataFrame) -> pd.Series:
 
 
 def compute_avwap(df: pd.DataFrame) -> pd.Series:
-    """
-    Anchored VWAP from first bar.
-    """
     tp = (df["High"] + df["Low"] + df["Close"]) / 3.0
     cum_vol = df["Volume"].cumsum()
     cum_pv = (tp * df["Volume"]).cumsum()
@@ -173,7 +170,6 @@ def compute_indicators(df: pd.DataFrame, swing_bars: int = 5) -> pd.DataFrame:
             df["Low"].iloc[i] < df["Low"].iloc[i - 1]
             and df["Low"].iloc[i] < df["Low"].iloc[i + 1]
         ):
-            # previous swing low
             prev_idx = i - swing_bars
             if prev_idx >= 0:
                 if (
@@ -1119,8 +1115,8 @@ def run_setup_scan(
 
 
 def run_screener(
+    universe: str,
     setup_type: str,
-    universe: list,
     interval: str,
     use_trend: bool,
     fresh_only: bool,
@@ -1129,171 +1125,52 @@ def run_screener(
     total_capital: float,
     risk_pct: float,
 ):
-    results = []
+    if universe == "NIFTY 50":
+        tickers = NIFTY50
+    elif universe == "NIFTY 200":
+        tickers = NIFTY200
+    elif universe == "NIFTY 500":
+        tickers = NIFTY500
+    else:
+        tickers = ALL_TICKERS
 
-    for ticker in universe:
-        try:
-            row = run_setup_scan(
-                setup_type, ticker, interval,
-                use_trend, fresh_only,
-                swing_bars, min_q,
-                total_capital, risk_pct
-            )
-            if row:
-                results.append(row)
-        except Exception:
-            continue
+    results = []
+    progress = st.progress(0.0, text="Scanning universe...")
+    total = len(tickers)
+
+    for idx, t in enumerate(tickers):
+        res = run_setup_scan(
+            setup_type, t, interval, use_trend, fresh_only,
+            swing_bars, min_q, total_capital, risk_pct
+        )
+        if res is not None:
+            results.append(res)
+
+        progress.progress((idx + 1) / total, text=f"Scanning {t} ({idx+1}/{total})")
+
+    progress.empty()
 
     if not results:
         return pd.DataFrame()
 
-    df = pd.DataFrame(results)
-    sort_cols = [col for col in ["Quality", "R_R", "Vol_Ratio"] if col in df.columns]
-    if sort_cols:
-        df = df.sort_values(sort_cols, ascending=False)
-
-    return df
-
-
-# ============================================================
-# BACKTEST & AUTOTRADE
-# ============================================================
-
-def simulate_trade(entry, sl, tp1, tp2, df_slice):
-    for i in range(len(df_slice)):
-        low = df_slice["Low"].iloc[i]
-        high = df_slice["High"].iloc[i]
-
-        if low <= sl:
-            return "SL", sl, (sl - entry)
-
-        if high >= tp1:
-            if high >= tp2:
-                return "TP2", tp2, (tp2 - entry)
-            return "TP1", tp1, (tp1 - entry)
-
-    last_close = df_slice["Close"].iloc[-1]
-    return "EXIT", last_close, (last_close - entry)
-
-
-def backtest_setup(
-    df: pd.DataFrame,
-    signals: list,
-    risk_pct: float,
-    total_capital: float,
-):
-    trades = []
-    capital = total_capital
-
-    for sig in signals:
-        i2 = sig["i2"]
-        if i2 + 1 >= len(df):
-            continue
-
-        entry = sig["Entry"]
-        sl = sig["SL"]
-        tp1 = sig["TP1"]
-        tp2 = sig["TP2"]
-
-        df_slice = df.iloc[i2 + 1 : i2 + 40]
-        if df_slice.empty:
-            continue
-
-        outcome, exit_price, pnl = simulate_trade(entry, sl, tp1, tp2, df_slice)
-
-        risk_amount = capital * risk_pct / 100.0
-        sl_dist = max(entry - sl, 0.01)
-        qty = max(int(risk_amount / sl_dist), 1)
-
-        profit = qty * pnl
-        capital += profit
-
-        trades.append({
-            "Date": sig["Date"],
-            "Entry": entry,
-            "Exit": exit_price,
-            "Outcome": outcome,
-            "PnL": round(profit, 2),
-            "Capital": round(capital, 2),
-            "R_Multiple": round(pnl / sl_dist, 2),
-        })
-
-    return pd.DataFrame(trades)
-
-
-def autotrade_signal_executor(
-    df: pd.DataFrame,
-    signal: dict,
-    risk_pct: float,
-    total_capital: float,
-):
-    i2 = signal["i2"]
-    if i2 + 1 >= len(df):
-        return None
-
-    entry = signal["Entry"]
-    sl = signal["SL"]
-    tp1 = signal["TP1"]
-    tp2 = signal["TP2"]
-
-    df_slice = df.iloc[i2 + 1 : i2 + 40]
-    if df_slice.empty:
-        return None
-
-    outcome, exit_price, pnl = simulate_trade(entry, sl, tp1, tp2, df_slice)
-
-    risk_amount = total_capital * risk_pct / 100.0
-    sl_dist = max(entry - sl, 0.01)
-    qty = max(int(risk_amount / sl_dist), 1)
-
-    profit = qty * pnl
-
-    return {
-        "Symbol": signal["Symbol"],
-        "Entry": entry,
-        "Exit": exit_price,
-        "Outcome": outcome,
-        "PnL": round(profit, 2),
-        "Qty": qty,
-        "R_Multiple": round(pnl / sl_dist, 2),
-        "Date": signal["Date"],
-    }
+    df_res = pd.DataFrame(results)
+    cols = get_screener_columns_for_setup(setup_type)
+    df_res = df_res[cols]
+    df_res = df_res.sort_values(by=["Grade", "R_R"], ascending=[True, False])
+    return df_res
 
 
 # ============================================================
-# VOLUME PROFILE & CHART
+# CHARTING
 # ============================================================
 
-def compute_volume_profile(df: pd.DataFrame, bins: int = 24):
-    if df is None or df.empty or df["Close"].isna().all():
-        return None, None, None
-
-    low = df["Low"].min()
-    high = df["High"].max()
-    if not np.isfinite(low) or not np.isfinite(high) or low == high:
-        return None, None, None
-
-    edges = np.linspace(low, high, bins + 1)
-    vol = np.zeros(bins)
-    for i in range(bins):
-        mask = (df["Close"] >= edges[i]) & (df["Close"] < edges[i + 1])
-        vol[i] = df.loc[mask, "Volume"].sum()
-
-    if vol.max() <= 0:
-        return edges, vol, None
-
-    poc_idx = int(np.argmax(vol))
-    poc = (edges[poc_idx] + edges[poc_idx + 1]) / 2
-
-    return edges, vol, poc
-
-
-def plot_chart(df: pd.DataFrame, ticker: str, show_vp: bool = True):
+def plot_chart(df: pd.DataFrame, row=None, setup_type: str = ""):
     if df is None or df.empty:
         return go.Figure()
 
     fig = make_subplots(
-        rows=2, cols=1,
+        rows=2,
+        cols=1,
         shared_xaxes=True,
         row_heights=[0.7, 0.3],
         vertical_spacing=0.03,
@@ -1308,197 +1185,294 @@ def plot_chart(df: pd.DataFrame, ticker: str, show_vp: bool = True):
             close=df["Close"],
             name="Price",
         ),
-        row=1, col=1
+        row=1,
+        col=1,
     )
 
-    for col in ["EMA21", "EMA50", "EMA200"]:
-        if col in df.columns:
-            fig.add_trace(
-                go.Scatter(
-                    x=df.index,
-                    y=df[col],
-                    mode="lines",
-                    name=col,
-                ),
-                row=1, col=1
-            )
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=df["EMA21"],
+            mode="lines",
+            name="EMA21",
+            line=dict(color="cyan", width=1),
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=df["EMA50"],
+            mode="lines",
+            name="EMA50",
+            line=dict(color="orange", width=1),
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=df["EMA200"],
+            mode="lines",
+            name="EMA200",
+            line=dict(color="yellow", width=1),
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=df["AVWAP"],
+            mode="lines",
+            name="AVWAP",
+            line=dict(color="magenta", width=1),
+        ),
+        row=1,
+        col=1,
+    )
 
     if "Bull_Div" in df.columns:
         bull_idx = df.index[df["Bull_Div"]]
-        if len(bull_idx) > 0:
-            fig.add_trace(
-                go.Scatter(
-                    x=bull_idx,
-                    y=df.loc[bull_idx, "Low"],
-                    mode="markers",
-                    marker=dict(color="lime", size=10),
-                    name="Bull Div",
-                ),
-                row=1, col=1
-            )
+        fig.add_trace(
+            go.Scatter(
+                x=bull_idx,
+                y=df.loc[bull_idx, "Low"],
+                mode="markers",
+                marker=dict(color="lime", size=10, symbol="triangle-up"),
+                name="Bull Div",
+            ),
+            row=1,
+            col=1,
+        )
 
     if "Bear_Div" in df.columns:
         bear_idx = df.index[df["Bear_Div"]]
-        if len(bear_idx) > 0:
-            fig.add_trace(
-                go.Scatter(
-                    x=bear_idx,
-                    y=df.loc[bear_idx, "High"],
-                    mode="markers",
-                    marker=dict(color="red", size=10),
-                    name="Bear Div",
-                ),
-                row=1, col=1
-            )
+        fig.add_trace(
+            go.Scatter(
+                x=bear_idx,
+                y=df.loc[bear_idx, "High"],
+                mode="markers",
+                marker=dict(color="red", size=10, symbol="triangle-down"),
+                name="Bear Div",
+            ),
+            row=1,
+            col=1,
+        )
 
     fig.add_trace(
         go.Bar(
             x=df.index,
             y=df["Volume"],
             name="Volume",
+            marker_color="rgba(100, 149, 237, 0.7)",
         ),
-        row=2, col=1
+        row=2,
+        col=1,
     )
 
-    if show_vp:
-        edges, vol, poc = compute_volume_profile(df)
-        if edges is not None and vol is not None and vol.max() > 0:
-            vol_scaled = vol / vol.max() * (df["High"].max() - df["Low"].min()) * 0.3
-            centers = (edges[:-1] + edges[1:]) / 2
-            fig.add_trace(
-                go.Bar(
-                    x=[df.index[-1]] * len(centers),
-                    y=centers,
-                    orientation="h",
-                    width=vol_scaled,
-                    name="Vol Profile",
-                    opacity=0.3,
-                ),
-                row=1, col=1
-            )
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=df["RSI"],
+            mode="lines",
+            name="RSI",
+            line=dict(color="white", width=1),
+            yaxis="y3",
+        ),
+        row=2,
+        col=1,
+    )
 
     fig.update_layout(
-        template=st.session_state["plot_theme"],
+        template=st.session_state.get("plot_theme", "plotly_dark"),
+        xaxis_rangeslider_visible=False,
         height=700,
-        margin=dict(l=20, r=20, t=40, b=20),
-        showlegend=True,
-        title=ticker,
+        margin=dict(l=10, r=10, t=30, b=20),
     )
+
+    fig.update_yaxes(title_text="Price", row=1, col=1)
+    fig.update_yaxes(title_text="Volume / RSI", row=2, col=1)
 
     return fig
 
 
 # ============================================================
-# UI: NAVIGATION & PAGES
+# PAGES
 # ============================================================
 
-def sidebar_navigation():
-    st.sidebar.markdown(
-        "<div class='royal-title'>Sniper Terminal v4</div>",
-        unsafe_allow_html=True
-    )
-    st.sidebar.markdown(
-        "<div class='royal-subtitle'>Royal Gold Edition</div><br>",
-        unsafe_allow_html=True
+def page_sniper_entry():
+    st.markdown('<div class="royal-title">Sniper Entry — Single Stock</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="royal-subtitle">Pick a stock, see full context with EMAs, AVWAP, RSI, volume & divergences.</div>',
+        unsafe_allow_html=True,
     )
 
-    nav = st.sidebar.radio(
-        "Navigation",
-        ["Screener", "Chart", "Backtest", "Autotrade", "Volume Profile"],
-        index=["Screener", "Chart", "Backtest", "Autotrade", "Volume Profile"].index(
-            st.session_state.get("nav_page", "Screener")
-        )
-    )
+    c1, c2, c3 = st.columns([3, 2, 2])
+    with c1:
+        ticker = st.selectbox("Ticker", ALL_TICKERS, index=0)
+    with c2:
+        interval = st.selectbox("Interval", ["1d", "1h", "30m", "15m"], index=0)
+    with c3:
+        years = st.slider("Years of history", 1, 5, 3)
 
-    st.session_state["nav_page"] = nav
-    return nav
+    df = load_data(ticker, interval=interval, years=years)
+    if df.empty:
+        st.warning("No data for this ticker/interval.")
+        return
 
+    df = compute_indicators(df)
 
-def setup_selector():
-    setups = [
-        "Divergence",
-        "BB Squeeze",
-        "High Volume Breakout",
-        "Trend Pullback",
-        "Liquidity Sweep",
-        "VCP Pattern",
-    ]
+    curr = df.iloc[-1]
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("Close", f"{curr['Close']:.2f}")
+    with c2:
+        st.metric("RSI", f"{curr['RSI']:.1f}")
+    with c3:
+        st.metric("ATR", f"{curr['ATR']:.2f}")
+    with c4:
+        st.metric("Vol Ratio", f"{curr['Vol_Ratio']:.2f}")
 
-    selected = st.segmented_control(
-        "Select Setup",
-        setups,
-        default=st.session_state.get("selected_setup", "Divergence")
-    )
+    fig = plot_chart(df)
+    st.plotly_chart(fig, use_container_width=False, width="stretch")
 
-    st.session_state["selected_setup"] = selected
-    return selected
-
-
-def index_universe_selector():
-    choice = st.selectbox(
-        "Universe",
-        ["NIFTY 50", "NIFTY 200", "NIFTY 500"],
-        index=1,  # default NIFTY 200
-    )
-    if choice == "NIFTY 50":
-        return NIFTY50
-    elif choice == "NIFTY 200":
-        return NIFTY200
-    else:
-        return NIFTY500
+    st.subheader("Raw Data (tail)")
+    st.dataframe(df.tail(100), use_container_width=False, width="stretch")
 
 
 def page_screener():
-    st.markdown("<div class='royal-title'>Screener</div>", unsafe_allow_html=True)
+    st.markdown('<div class="royal-title">Sniper Screener — NSE Universe</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="royal-subtitle">Scan NIFTY 50 / 200 / 500 for high‑quality sniper entries.</div>',
+        unsafe_allow_html=True,
+    )
 
-    setup_type = setup_selector()
-    universe = index_universe_selector()
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        universe = st.selectbox("Universe", ["NIFTY 50", "NIFTY 200", "NIFTY 500", "All Combined"], index=0)
+    with c2:
+        setup_type = st.selectbox(
+            "Setup Type",
+            [
+                "Divergence",
+                "BB Squeeze",
+                "High Volume Breakout",
+                "Trend Pullback",
+                "Liquidity Sweep",
+                "VCP Pattern",
+            ],
+            index=0,
+        )
+    with c3:
+        interval = st.selectbox("Interval", ["1d", "1h", "30m"], index=0)
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        interval = st.selectbox("Interval", ["1d", "1h", "15m"])
-    with col2:
-        use_trend = st.checkbox("Weekly Trend Filter", True)
-    with col3:
-        fresh_only = st.checkbox("Fresh Signals Only", True)
+    c4, c5, c6 = st.columns(3)
+    with c4:
+        use_trend = st.checkbox("Align with Weekly Trend", value=True)
+    with c5:
+        fresh_only = st.checkbox("Fresh Signals Only", value=True)
+    with c6:
+        swing_bars = st.slider("Swing Bars (for divergence)", 3, 10, 5)
 
-    col4, col5, col6 = st.columns(3)
-    with col4:
-        swing_bars = st.number_input("Swing Bars", 3, 10, 5)
-    with col5:
-        min_q = st.number_input("Min Quality", 0, 100, 50)
-    with col6:
-        total_capital = st.number_input("Total Capital", 10000, 10000000, 200000)
+    c7, c8, c9 = st.columns(3)
+    with c7:
+        min_q = st.slider("Min Quality Score", 0, 100, 60, step=5)
+    with c8:
+        total_capital = st.number_input("Total Capital (₹)", value=100000.0, step=5000.0)
+    with c9:
+        risk_pct = st.slider("Risk per Trade (%)", 0.5, 5.0, 1.0, step=0.5)
 
-    risk_pct = st.slider("Risk % per Trade", 0.1, 5.0, 1.0)
+    if st.button("Run Screener", type="primary"):
+        df_res = run_screener(
+            universe,
+            setup_type,
+            interval,
+            use_trend,
+            fresh_only,
+            swing_bars,
+            min_q,
+            total_capital,
+            risk_pct,
+        )
 
-    if st.button("Run Screener"):
-        with st.spinner("Scanning market..."):
-            df = run_screener(
-                setup_type,
-                universe,
-                interval,
-                use_trend,
-                fresh_only,
-                swing_bars,
-                min_q,
-                total_capital,
-                risk_pct,
-            )
-
-        if df.empty:
-            st.warning("No signals found.")
+        if df_res.empty:
+            st.info("No setups found with current filters.")
             return
 
-        cols = get_screener_columns_for_setup(setup_type)
-        st.dataframe(df[cols], width="stretch")
+        st.subheader("Screener Results")
+        st.dataframe(df_res, use_container_width=False, width="stretch")
 
-        st.markdown("---")
-        st.subheader("Setup Analysis")
-
-        selected_row = st.selectbox("Select a signal", df.index)
-        row = df.loc[selected_row]
+        symbols = df_res["Symbol"].tolist()
+        choice = st.selectbox("Select a symbol to inspect chart", symbols)
+        row = df_res[df_res["Symbol"] == choice].iloc[0]
 
         ticker = row["Ticker"]
-        df_full = load_data(ticker, interval)
+        df_full = load_data(ticker, interval=interval)
         df_full = compute_indicators(df_full)
+
+        fig = plot_chart(df_full, row=row, setup_type=setup_type)
+        st.plotly_chart(fig, use_container_width=False, width="stretch")
+
+        st.subheader("Setup Explanation")
+        i2 = int(row.get("i2", len(df_full) - 2))
+
+        if setup_type == "Divergence":
+            st.markdown(explain_divergence(row, df_full, i2))
+        elif setup_type == "BB Squeeze":
+            st.markdown(explain_bb_squeeze(row, df_full, i2))
+        elif setup_type == "High Volume Breakout":
+            st.markdown(explain_breakout(row, df_full, i2))
+        elif setup_type == "Trend Pullback":
+            st.markdown(explain_pullback(row, df_full, i2))
+        elif setup_type == "Liquidity Sweep":
+            st.markdown(explain_sweep(row, df_full, i2))
+        elif setup_type == "VCP Pattern":
+            st.markdown(explain_vcp(row, df_full, i2))
+
+
+def page_guide():
+    st.markdown('<div class="royal-title">Sniper Terminal v4 — Guide</div>', unsafe_allow_html=True)
+    st.markdown(
+        """
+### Core Ideas
+
+- **Divergence**: Price makes new low/high but RSI disagrees → potential reversal.
+- **BB Squeeze**: Volatility compression (BB inside KC) then expansion → explosive moves.
+- **High Volume Breakout**: Break above resistance with 2×+ volume.
+- **Trend Pullback**: Strong uptrend, pullback to EMA21/50, reversal candle with volume.
+- **Liquidity Sweep**: Stop‑hunt wick + strong reversal + positive OFI.
+- **VCP**: Volatility contraction, volume dry‑up, then breakout.
+
+Use the **Screener** to find candidates, then **Sniper Entry** page to deep‑dive each chart.
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+def main():
+    apply_theme()
+
+    st.sidebar.title("Sniper Terminal v4")
+    page = st.sidebar.radio(
+        "Navigation",
+        ["Sniper Entry", "Screener", "Guide"],
+        index=0,
+    )
+
+    if page == "Sniper Entry":
+        page_sniper_entry()
+    elif page == "Screener":
+        page_screener()
+    else:
+        page_guide()
+
+
+if __name__ == "__main__":
+    main()
