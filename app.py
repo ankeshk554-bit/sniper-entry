@@ -1,1321 +1,1216 @@
-# ============================================================
-# SNIPER TERMINAL v2.0 - ROYAL GOLD (Champagne) EDITION
-# ============================================================
-
-import time
-import warnings
-import numpy as np
-import pandas as pd
-import yfinance as yf
 import streamlit as st
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-
-warnings.filterwarnings("ignore")
+import pandas as pd
+import numpy as np
+import yfinance as yf
+from datetime import datetime, timedelta
 
 # ============================================================
-# UNIVERSE
+# BASIC CONSTANTS / UNIVERSES
 # ============================================================
-
-NIFTY200 = [
-    "RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS",
-    "HINDUNILVR.NS","ITC.NS","LT.NS","SBIN.NS","BHARTIARTL.NS",
-    "KOTAKBANK.NS","HCLTECH.NS","ASIANPAINT.NS","MARUTI.NS","AXISBANK.NS",
-    "SUNPHARMA.NS","BAJFINANCE.NS","ULTRACEMCO.NS","WIPRO.NS","DMART.NS",
-    "ADANIENT.NS","ADANIPORTS.NS","TITAN.NS","ONGC.NS","POWERGRID.NS",
-    "NTPC.NS","JSWSTEEL.NS","TATASTEEL.NS","M&M.NS","BAJAJFINSV.NS",
-    "HDFCLIFE.NS","SBILIFE.NS","DIVISLAB.NS","DRREDDY.NS","BRITANNIA.NS",
-    "NESTLEIND.NS","HEROMOTOCO.NS","EICHERMOT.NS","BAJAJ-AUTO.NS",
-    "COALINDIA.NS","GRASIM.NS","TECHM.NS","CIPLA.NS","SHREECEM.NS",
-    "BPCL.NS","IOC.NS","HINDALCO.NS","VEDL.NS","UPL.NS","ABB.NS",
-    "AMBUJACEM.NS","APOLLOHOSP.NS","AUROPHARMA.NS","BANDHANBNK.NS",
-    "BANKBARODA.NS","BEL.NS","BERGEPAINT.NS","BIOCON.NS","BOSCHLTD.NS",
-    "CANBK.NS","CHOLAFIN.NS","CUMMINSIND.NS","DABUR.NS","DLF.NS",
-    "GAIL.NS","GODREJCP.NS","HAVELLS.NS","ICICIPRULI.NS","IGL.NS",
-    "INDHOTEL.NS","INDIGO.NS","INDUSINDBK.NS","LUPIN.NS","MFSL.NS",
-    "MUTHOOTFIN.NS","NAUKRI.NS","PIDILITIND.NS","PIIND.NS","PNB.NS",
-    "POLYCAB.NS","RECLTD.NS","SAIL.NS","SRF.NS","TATACONSUM.NS",
-    "TATAMOTORS.NS","TATAPOWER.NS","TORNTPHARM.NS","TRENT.NS",
-    "TVSMOTOR.NS","VOLTAS.NS","ZEEL.NS","HAL.NS","IRCTC.NS",
-    "DELHIVERY.NS","ZOMATO.NS","PAYTM.NS","NYKAA.NS","LTIM.NS",
-]
 
 NIFTY50 = [
-    "RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS",
-    "HINDUNILVR.NS","ITC.NS","LT.NS","SBIN.NS","BHARTIARTL.NS",
-    "KOTAKBANK.NS","HCLTECH.NS","ASIANPAINT.NS","MARUTI.NS","AXISBANK.NS",
-    "SUNPHARMA.NS","BAJFINANCE.NS","ULTRACEMCO.NS","WIPRO.NS","TITAN.NS",
-    "ONGC.NS","POWERGRID.NS","NTPC.NS","JSWSTEEL.NS","TATASTEEL.NS",
-    "M&M.NS","BAJAJFINSV.NS","HDFCLIFE.NS","SBILIFE.NS","DIVISLAB.NS",
-    "DRREDDY.NS","BRITANNIA.NS","NESTLEIND.NS","HEROMOTOCO.NS",
-    "EICHERMOT.NS","BAJAJ-AUTO.NS","COALINDIA.NS","GRASIM.NS",
-    "TECHM.NS","CIPLA.NS","BPCL.NS","IOC.NS","HINDALCO.NS",
-    "TATACONSUM.NS","TATAMOTORS.NS","TATAPOWER.NS","INDUSINDBK.NS",
-    "ADANIENT.NS","ADANIPORTS.NS","DMART.NS",
+    "RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS",
+    "HINDUNILVR.NS", "ITC.NS", "SBIN.NS", "BHARTIARTL.NS", "KOTAKBANK.NS",
+]
+
+NIFTY200 = NIFTY50  # extend as you like
+
+SETUP_TYPES = [
+    "Divergence",
+    "BB Squeeze",
+    "High Volume Breakout",
+    "Trend Pullback",
+    "Liquidity Sweep",
+    "VCP Pattern",
 ]
 
 # ============================================================
-# STREAMLIT CONFIG & GLOBAL STATE
-# ============================================================
-
-st.set_page_config(
-    page_title="Sniper Terminal v2 - Royal Gold",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-if "theme" not in st.session_state:
-    st.session_state["theme"] = "Dark"
-if "total_capital" not in st.session_state:
-    st.session_state["total_capital"] = 200000.0
-if "risk_pct" not in st.session_state:
-    st.session_state["risk_pct"] = 1.0
-
-# ============================================================
-# THEME ENGINE (DARK / LIGHT, ROYAL GOLD - CHAMPAGNE)
+# THEME / CSS
 # ============================================================
 
 def apply_theme():
-    theme = st.session_state.get("theme", "Dark")
-
-    if theme == "Dark":
-        bg = "#050608"
-        fg = "#f5f5f5"
-        card = "#0b0d11"
-        border = "#2b2f36"
-        gold = "#f7e7ce"  # Champagne gold
-        gold_soft = "#c9b79a"
-        plot_theme = "plotly_dark"
-    else:
-        bg = "#f5f5f7"
-        fg = "#111111"
-        card = "#ffffff"
-        border = "#d0d0d5"
-        gold = "#c9a96a"
-        gold_soft = "#b09055"
-        plot_theme = "plotly_white"
-
-    st.session_state["plot_theme"] = plot_theme
-    st.session_state["gold"] = gold
-
     st.markdown(
-        f"""
+        """
         <style>
-        :root {{
-            --bg: {bg};
-            --fg: {fg};
-            --card: {card};
-            --border: {border};
-            --gold: {gold};
-            --gold-soft: {gold_soft};
-        }}
-
-        body, .stApp {{
-            background: var(--bg) !important;
-            color: var(--fg) !important;
-        }}
-
-        .royal-card {{
-            background: var(--card);
-            border-radius: 12px;
+        :root {
+            --bg: #050509;
+            --card: #101018;
+            --fg: #f5f5f7;
+            --muted: #9b9bb5;
+            --gold: #f7e7ce;
+            --gold-soft: #d9c29c;
+            --border: #2b2b3d;
+            --accent: #ffb347;
+        }
+        body {
+            background-color: var(--bg);
+            color: var(--fg);
+        }
+        .main {
+            background-color: var(--bg);
+        }
+        .royal-card {
+            background: radial-gradient(circle at top, rgba(247,231,206,0.08), #050509);
+            border-radius: 16px;
             border: 1px solid var(--border);
             padding: 16px 18px;
             margin-bottom: 12px;
-            box-shadow: 0 0 18px rgba(0,0,0,0.35);
-        }}
-
-        .royal-metric {{
-            background: linear-gradient(135deg, rgba(247,231,206,0.08), rgba(247,231,206,0.02));
-            border-radius: 10px;
-            border: 1px solid rgba(247,231,206,0.35);
-            padding: 10px 14px;
+        }
+        .setup-segment {
+            display: inline-flex;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: radial-gradient(circle at top, rgba(247,231,206,0.12), rgba(0,0,0,0.6));
+            padding: 2px;
             margin-bottom: 10px;
-        }}
-
-        .royal-title {{
-            font-size: 22px;
-            font-weight: 800;
+        }
+        .setup-segment button {
+            border: none;
+            background: transparent;
+            color: var(--fg);
+            padding: 6px 14px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 600;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            color: var(--gold);
-        }}
-
-        .royal-subtitle {{
-            font-size: 11px;
-            letter-spacing: 0.18em;
-            text-transform: uppercase;
-            color: rgba(247,231,206,0.75);
-        }}
-
-        .royal-sidebar-header {{
-            padding: 14px 10px 10px 10px;
-            border-bottom: 1px solid rgba(247,231,206,0.25);
-            margin-bottom: 8px;
-        }}
-
-        .royal-nav-label {{
-            font-size: 12px !important;
-            font-weight: 600 !important;
-            letter-spacing: 0.08em !important;
-            text-transform: uppercase !important;
-        }}
-
-        [data-testid="stSidebar"] {{
-            background: radial-gradient(circle at top, #151821 0, #050608 55%);
-            border-right: 1px solid rgba(247,231,206,0.25);
-        }}
-
-        .stRadio > div > label {{
-            color: var(--fg) !important;
-        }}
-
-        .stButton > button {{
-            background: linear-gradient(135deg, var(--gold), var(--gold-soft)) !important;
-            color: #111 !important;
-            border: none !important;
-            font-weight: 700 !important;
-            border-radius: 8px !important;
-            padding: 8px 20px !important;
-        }}
-
-        .stButton > button:hover {{
-            filter: brightness(1.08) !important;
-            box-shadow: 0 0 18px rgba(247,231,206,0.45) !important;
-        }}
-
-        .stDataFrame, .stTable {{
-            border-radius: 10px !important;
-            border: 1px solid var(--border) !important;
-        }}
-
-        .stSelectbox > div > div, .stTextInput > div > div > input, .stNumberInput > div > div > input {{
-            background: var(--card) !important;
-            color: var(--fg) !important;
-            border-radius: 8px !important;
-            border: 1px solid var(--border) !important;
-        }}
+            cursor: pointer;
+        }
+        .setup-segment button.active {
+            background: linear-gradient(135deg, var(--gold), var(--gold-soft));
+            color: #111;
+            box-shadow: 0 0 12px rgba(247,231,206,0.45);
+        }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 # ============================================================
-# DATA LAYER (LIVE FROM YAHOO)
+# DATA & INDICATORS
 # ============================================================
 
-@st.cache_data(show_spinner=False, ttl=120)
-def load_data(ticker: str, interval: str, years: int = 1) -> pd.DataFrame:
-    period_map = {
-        "1wk": "7y",
-        "1d": f"{years}y",
-        "1h": f"{min(years, 2)}y",
-        "15m": "60d",
-    }
-    df = yf.download(
-        ticker,
-        period=period_map.get(interval, f"{years}y"),
-        interval=interval,
-        auto_adjust=True,
-        progress=False,
-        threads=False,
-    )
-    if df.empty:
+@st.cache_data(show_spinner=False)
+def load_data(ticker: str, interval: str):
+    period = "1y"
+    if interval in ["1h", "15m"]:
+        period = "60d"
+    elif interval == "1wk":
+        period = "5y"
+    try:
+        df = yf.download(ticker, period=period, interval=interval, auto_adjust=False, progress=False)
+        df.dropna(inplace=True)
         return df
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    df = df.apply(pd.to_numeric, errors="coerce").dropna(how="all")
-    needed = {"Open", "High", "Low", "Close", "Volume"}
-    if not needed.issubset(df.columns):
+    except Exception:
         return pd.DataFrame()
-    return df
 
-# ============================================================
-# INDICATORS
-# ============================================================
 
-@st.cache_data(show_spinner=False)
-def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
+def ema(series, length):
+    return series.ewm(span=length, adjust=False).mean()
+
+
+def rsi(series, length=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(length).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(length).mean()
+    rs = gain / loss.replace(0, np.nan)
+    return 100 - (100 / (1 + rs))
+
+
+def macd_hist(series, fast=12, slow=26, signal=9):
+    fast_ema = ema(series, fast)
+    slow_ema = ema(series, slow)
+    macd = fast_ema - slow_ema
+    signal_line = ema(macd, signal)
+    return macd - signal_line
+
+
+def atr(df, length=14):
+    high_low = df["High"] - df["Low"]
+    high_close = (df["High"] - df["Close"].shift()).abs()
+    low_close = (df["Low"] - df["Close"].shift()).abs()
+    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    return tr.rolling(length).mean()
+
+
+def avwap(df):
+    pv = (df["Close"] * df["Volume"]).cumsum()
+    vol_cum = df["Volume"].cumsum().replace(0, np.nan)
+    return pv / vol_cum
+
+
+def vol_ratio(df, length=20):
+    v = df["Volume"]
+    ma = v.rolling(length).mean()
+    return v / ma.replace(0, np.nan)
+
+
+def ofi(df):
+    o = df["Open"]
+    c = df["Close"]
+    v = df["Volume"]
+    prev_c = c.shift()
+    ofi_val = np.where(
+        c > prev_c,
+        v,
+        np.where(c < prev_c, -v, 0),
+    )
+    return pd.Series(ofi_val, index=df.index)
+
+
+def bb_kc(df, length=20, mult_bb=2.0, mult_kc=1.5):
+    mid = df["Close"].rolling(length).mean()
+    std = df["Close"].rolling(length).std()
+    bb_upper = mid + mult_bb * std
+    bb_lower = mid - mult_bb * std
+
+    tr = atr(df, length)
+    kc_upper = mid + mult_kc * tr
+    kc_lower = mid - mult_kc * tr
+
+    return bb_upper, bb_lower, kc_upper, kc_lower
+
+
+def compute_indicators(df: pd.DataFrame):
     df = df.copy()
-    c, hi, lo, v = df["Close"], df["High"], df["Low"], df["Volume"]
-
-    for p in [9, 21, 50, 200]:
-        df[f"EMA{p}"] = c.ewm(span=p, adjust=False).mean()
-
-    delta = c.diff()
-    gain = delta.clip(lower=0).ewm(span=14, adjust=False).mean()
-    loss = (-delta.clip(upper=0)).ewm(span=14, adjust=False).mean()
-    df["RSI"] = 100 - 100 / (1 + gain / loss.replace(0, np.nan))
-
-    e12 = c.ewm(span=12, adjust=False).mean()
-    e26 = c.ewm(span=26, adjust=False).mean()
-    df["MACD"] = e12 - e26
-    df["MACD_Signal"] = df["MACD"].ewm(span=9, adjust=False).mean()
-    df["MACD_Hist"] = df["MACD"] - df["MACD_Signal"]
-
-    tr = pd.concat(
-        [hi - lo, (hi - c.shift()).abs(), (lo - c.shift()).abs()],
-        axis=1
-    ).max(axis=1)
-    df["ATR"] = tr.ewm(span=14, adjust=False).mean()
-
-    sma20 = c.rolling(20).mean()
-    std20 = c.rolling(20).std()
-    df["BB_U"] = sma20 + 2 * std20
-    df["BB_M"] = sma20
-    df["BB_L"] = sma20 - 2 * std20
-    df["BB_W"] = (df["BB_U"] - df["BB_L"]) / df["BB_M"].replace(0, np.nan)
-
-    ema20 = c.ewm(span=20, adjust=False).mean()
-    df["KC_U"] = ema20 + 1.5 * df["ATR"]
-    df["KC_L"] = ema20 - 1.5 * df["ATR"]
-    df["Squeeze"] = (df["BB_U"] < df["KC_U"]) & (df["BB_L"] > df["KC_L"])
-    df["Squeeze_Fire"] = df["Squeeze"].shift(1).fillna(False) & ~df["Squeeze"]
-
-    lo14 = lo.rolling(14).min()
-    hi14 = hi.rolling(14).max()
-    df["Stoch_K"] = 100 * (c - lo14) / (hi14 - lo14).replace(0, np.nan)
-    df["Stoch_D"] = df["Stoch_K"].rolling(3).mean()
-
-    tp = (hi + lo + c) / 3
-    df["AVWAP"] = (tp * v).cumsum() / v.cumsum()
-    var = ((tp - df["AVWAP"]) ** 2 * v).cumsum() / v.cumsum()
-    sd = np.sqrt(var.clip(lower=0))
-    df["VWAP_U1"] = df["AVWAP"] + sd
-    df["VWAP_L1"] = df["AVWAP"] - sd
-    df["VWAP_U2"] = df["AVWAP"] + 2 * sd
-    df["VWAP_L2"] = df["AVWAP"] - 2 * sd
-
-    df["Vol_MA20"] = v.rolling(20).mean()
-    df["Vol_Ratio"] = v / df["Vol_MA20"].replace(0, np.nan)
-
-    body = (c - df["Open"]).abs()
-    rng = (hi - lo).replace(0, np.nan)
-    br = (body / rng).clip(0, 1)
-    bull_b = (c > df["Open"]).astype(float)
-    df["OFI"] = (bull_b * br - (1 - bull_b) * br).rolling(5).mean()
-
-    bdy = (c - df["Open"]).abs()
-    lwck = df[["Open", "Close"]].min(axis=1) - lo
-    uwck = hi - df[["Open", "Close"]].max(axis=1)
-    df["Hammer"] = (lwck > 2 * bdy) & (uwck < bdy * 0.5) & (c > df["Open"])
-
-    prev_bear = c.shift(1) < df["Open"].shift(1)
-    curr_bull = c > df["Open"]
-    df["BullEngulf"] = (
-        prev_bear
-        & curr_bull
-        & (df["Open"] <= c.shift(1))
-        & (c >= df["Open"].shift(1))
-    )
-    df["BearEngulf"] = (
-        (c.shift(1) > df["Open"].shift(1))
-        & (c < df["Open"])
-        & (df["Open"] > c.shift(1))
-    )
-    df["BullPat"] = df["Hammer"] | df["BullEngulf"]
-    df["BearPat"] = df["BearEngulf"] | (
-        (uwck > 2 * bdy) & (lwck < bdy * 0.5) & (c < df["Open"])
-    )
-    return df
-
-@st.cache_data(show_spinner=False)
-def compute_avwaps(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    tp = (df["High"] + df["Low"] + df["Close"]) / 3
-    vol = df["Volume"]
-
-    def avwap(anc: int) -> pd.Series:
-        out = pd.Series(np.nan, index=df.index)
-        if anc >= len(df):
-            return out
-        cv = vol.iloc[anc:].cumsum()
-        ctv = (tp.iloc[anc:] * vol.iloc[anc:]).cumsum()
-        out.iloc[anc:] = (ctv / cv.replace(0, np.nan)).values
-        return out
-
-    tl = int(df["High"].values.argmax())
-    bl = int(df["Low"].values.argmin())
-    rec = max(0, len(df) - 60)
-    rt = rec + int(df["High"].iloc[rec:].values.argmax())
-    rb = rec + int(df["Low"].iloc[rec:].values.argmin())
-
-    df["VWAP_TOP"] = avwap(tl)
-    df["VWAP_BOT"] = avwap(bl)
-    df["VWAP_RTOP"] = avwap(rt)
-    df["VWAP_RBOT"] = avwap(rb)
+    df["EMA21"] = ema(df["Close"], 21)
+    df["EMA50"] = ema(df["Close"], 50)
+    df["EMA200"] = ema(df["Close"], 200)
+    df["RSI"] = rsi(df["Close"], 14)
+    df["MACD_Hist"] = macd_hist(df["Close"])
+    df["ATR"] = atr(df, 14)
+    df["AVWAP"] = avwap(df)
+    df["Vol_Ratio"] = vol_ratio(df, 20)
+    df["OFI"] = ofi(df)
+    bb_u, bb_l, kc_u, kc_l = bb_kc(df)
+    df["BB_Upper"] = bb_u
+    df["BB_Lower"] = bb_l
+    df["KC_Upper"] = kc_u
+    df["KC_Lower"] = kc_l
+    df.dropna(inplace=True)
     return df
 
 # ============================================================
-# DIVERGENCE & SWINGS
+# SWING / TREND / QUALITY
 # ============================================================
 
-def swing_lows(series: pd.Series, bars=5):
-    v = series.values
-    m = np.zeros(len(v), dtype=bool)
-    for i in range(bars, len(v) - bars):
-        if v[i] == v[i - bars : i + bars + 1].min():
-            m[i] = True
-    return m
+def swing_lows(series, bars=5):
+    return (series.shift(1).rolling(bars).min() > series) & (series.shift(-1).rolling(bars).min() > series)
 
-def swing_highs(series: pd.Series, bars=5):
-    v = series.values
-    m = np.zeros(len(v), dtype=bool)
-    for i in range(bars, len(v) - bars):
-        if v[i] == v[i - bars : i + bars + 1].max():
-            m[i] = True
-    return m
 
-@st.cache_data(show_spinner=False)
-def compute_divergences(df: pd.DataFrame, bars=5):
-    lm = swing_lows(df["Low"], bars)
-    hm = swing_highs(df["High"], bars)
-    li = np.where(lm)[0]
-    hi = np.where(hm)[0]
-    bull, bear = [], []
-    for j in range(1, len(li)):
-        i1, i2 = li[j - 1], li[j]
-        if (
-            df["Low"].iloc[i2] < df["Low"].iloc[i1]
-            and df["RSI"].iloc[i2] > df["RSI"].iloc[i1]
-            and df["MACD_Hist"].iloc[i2] > df["MACD_Hist"].iloc[i1]
-        ):
-            bull.append((i1, i2))
-    for j in range(1, len(hi)):
-        i1, i2 = hi[j - 1], hi[j]
-        if (
-            df["High"].iloc[i2] > df["High"].iloc[i1]
-            and df["RSI"].iloc[i2] < df["RSI"].iloc[i1]
-            and df["MACD_Hist"].iloc[i2] < df["MACD_Hist"].iloc[i1]
-        ):
-            bear.append((i1, i2))
-    return bull[-3:], bear[-3:]
+def swing_highs(series, bars=5):
+    return (series.shift(1).rolling(bars).max() < series) & (series.shift(-1).rolling(bars).max() < series)
 
-# ============================================================
-# SIGNAL QUALITY & EXPLANATION
-# ============================================================
-
-def signal_quality(df: pd.DataFrame, i2: int):
-    sc = {}
-    cl = float(df["Close"].iloc[i2])
-    atr = float(df["ATR"].iloc[i2])
-    rsi = float(df["RSI"].iloc[i2])
-
-    sc["RSI_Zone"] = 10 if 28 < rsi < 48 else 6 if rsi < 55 else 2
-
-    mh = float(df["MACD_Hist"].iloc[i2])
-    mhp = float(df["MACD_Hist"].iloc[i2 - 1]) if i2 > 0 else mh
-    sc["MACD_Turn"] = 10 if mh > mhp and mh > -atr * 0.01 else 4
-
-    e21 = float(df["EMA21"].iloc[i2])
-    e50 = float(df["EMA50"].iloc[i2])
-    e200 = float(df["EMA200"].iloc[i2])
-    sc["EMA_Stack"] = 10 if cl > e21 > e50 > e200 else 6 if cl > e50 > e200 else 2
-
-    sc["AVWAP"] = 10 if cl > float(df["AVWAP"].iloc[i2]) else 3
-
-    sqf = bool(df["Squeeze_Fire"].iloc[i2])
-    sqn = bool(df["Squeeze"].iloc[i2])
-    sc["BB_Squeeze"] = 10 if sqf else 6 if sqn else 1
-
-    vr_raw = df["Vol_Ratio"].iloc[i2]
-    vr = float(vr_raw) if not np.isnan(vr_raw) else 1.0
-    sc["Vol_Surge"] = 10 if vr > 2 else 7 if vr > 1.5 else 2
-
-    ofi_raw = df["OFI"].iloc[i2]
-    ofi = float(ofi_raw) if not np.isnan(ofi_raw) else 0.0
-    sc["Order_Flow"] = 10 if ofi > 0.2 else 5 if ofi > 0 else 1
-
-    sc["Candle_Pat"] = 10 if bool(df["BullPat"].iloc[i2]) else 3
-
-    stk_raw = df["Stoch_K"].iloc[i2]
-    stk = float(stk_raw) if not np.isnan(stk_raw) else 50
-    sc["Stochastic"] = 10 if stk < 25 else 5 if stk < 40 else 1
-
-    sc["ATR_Valid"] = 10 if atr > 0 else 0
-
-    tot = sum(sc.values())
-    grade = (
-        "A+" if tot >= 85 else
-        "A" if tot >= 70 else
-        "B+" if tot >= 55 else
-        "B" if tot >= 40 else
-        "C"
-    )
-    return {"total": tot, "grade": grade, "breakdown": sc}
-
-def build_analysis_text(ticker, df, i2, q, rr, vr, ofi, squeeze_fire, in_squeeze):
-    lines = []
-    cl = float(df["Close"].iloc[i2])
-    e21 = float(df["EMA21"].iloc[i2])
-    e50 = float(df["EMA50"].iloc[i2])
-    e200 = float(df["EMA200"].iloc[i2])
-    avwap = float(df["AVWAP"].iloc[i2])
-    rsi = float(df["RSI"].iloc[i2])
-    atr = float(df["ATR"].iloc[i2])
-
-    lines.append(f"• Overall quality score is {q['total']} ({q['grade']}).")
-    if cl > e21 > e50 > e200 and cl > avwap:
-        lines.append("• Price is in a strong bullish structure (above EMA21/50/200 and AVWAP).")
-    elif cl > e50 > e200:
-        lines.append("• Price is in a medium-term uptrend (above EMA50/200).")
-    else:
-        lines.append("• Price is not cleanly stacked above EMAs; trend is less ideal.")
-
-    if 30 < rsi < 50:
-        lines.append("• RSI is in a constructive zone (30–50), suggesting early trend participation.")
-    elif rsi < 30:
-        lines.append("• RSI is oversold; bounce is possible but risk of value trap exists.")
-    elif rsi > 70:
-        lines.append("• RSI is overbought; upside may be limited and risk of pullback is higher.")
-
-    if squeeze_fire:
-        lines.append("• Squeeze has just fired, indicating potential expansion in volatility and trend.")
-    elif in_squeeze:
-        lines.append("• Price is in a volatility squeeze; a strong move may be building up.")
-    else:
-        lines.append("• No active squeeze; move may be more mature or already in progress.")
-
-    if vr > 2:
-        lines.append("• Volume is more than 2x its 20-bar average, showing strong participation.")
-    elif vr > 1.5:
-        lines.append("• Volume is moderately elevated, which supports the move.")
-    else:
-        lines.append("• Volume is not significantly elevated; conviction may be lower.")
-
-    if ofi > 0.2:
-        lines.append("• Order flow is clearly positive (buyers in control).")
-    elif ofi > 0:
-        lines.append("• Order flow is slightly positive.")
-    elif ofi < -0.2:
-        lines.append("• Order flow is negative; smart money may be selling into strength.")
-    else:
-        lines.append("• Order flow is neutral; no clear dominance.")
-
-    if rr >= 2:
-        lines.append(f"• Reward-to-risk is attractive at ~{rr}R or better.")
-    elif rr >= 1.5:
-        lines.append(f"• Reward-to-risk is acceptable at ~{rr}R, but not exceptional.")
-    else:
-        lines.append(f"• Reward-to-risk is weak at ~{rr}R; consider passing or waiting for better structure.")
-
-    if q["grade"] in ["A+", "A"]:
-        lines.append("• Overall: This is a high-quality setup suitable for swing entries if risk is managed.")
-    elif q["grade"] in ["B+", "B"]:
-        lines.append("• Overall: Decent setup, but be selective with position size and entry timing.")
-    else:
-        lines.append("• Overall: Quality is low; be cautious, this may be a trap or late-stage move.")
-
-    if atr <= 0:
-        lines.append("• Caution: ATR is too low or unstable; stop placement may be unreliable.")
-
-    return "\n".join(lines)
 
 @st.cache_data(show_spinner=False)
 def get_weekly_trend(ticker: str):
-    df = load_data(ticker, "1wk", years=5)
-    if df.empty:
+    dfw = yf.download(ticker, period="5y", interval="1wk", auto_adjust=False, progress=False)
+    if dfw.empty:
         return None
-    df["EMA200"] = df["Close"].ewm(span=200, adjust=False).mean()
-    d = df["Close"].diff()
-    g = d.clip(lower=0).ewm(span=14, adjust=False).mean()
-    l = (-d.clip(upper=0)).ewm(span=14, adjust=False).mean()
-    df["RSI"] = 100 - 100 / (1 + g / l.replace(0, np.nan))
-    return (df["Close"] > df["EMA200"]) & (df["RSI"] > 50)
+    dfw["EMA200"] = ema(dfw["Close"], 200)
+    trend = dfw["Close"] > dfw["EMA200"]
+    return trend
 
-def scan_stock(ticker, interval, use_trend, fresh_only, bars, min_q, total_capital, risk_pct):
-    try:
-        df = load_data(ticker, interval)
-        if df.empty or len(df) < 100:
-            return None
-        df = compute_indicators(df)
-        bull, _ = compute_divergences(df, bars=bars)
-        if not bull:
-            return None
-        i1, i2 = bull[-1]
-        if fresh_only and i2 < len(df) - 4:
-            return None
-        if use_trend:
-            tw = get_weekly_trend(ticker)
-            if tw is None:
-                return None
-            if not bool(tw.reindex(df.index, method="ffill").iloc[i2]):
-                return None
-        ei = i2 + 1
-        if ei >= len(df):
-            return None
-        ep = float(df["Open"].iloc[ei])
-        atr = float(df["ATR"].iloc[i2])
-        e200 = float(df["EMA200"].iloc[i2])
-        avwap = float(df["AVWAP"].iloc[i2])
-        if ep < e200 or ep < avwap or atr <= 0:
-            return None
-        q = signal_quality(df, i2)
-        if q["total"] < min_q:
-            return None
-        sl = round(ep - 1.5 * atr, 2)
-        tp1 = round(ep + 2 * atr, 2)
-        tp2 = round(ep + 4 * atr, 2)
-        rr = round((tp1 - ep) / (ep - sl), 2) if ep != sl else 0
-        vr_raw = df["Vol_Ratio"].iloc[i2]
-        vr = float(vr_raw) if not np.isnan(vr_raw) else 1.0
-        ofi_raw = df["OFI"].iloc[i2]
-        ofi = float(ofi_raw) if not np.isnan(ofi_raw) else 0.0
 
-        risk_amount = total_capital * risk_pct / 100.0
-        sl_dist = max(ep - sl, 0.01)
-        pos_qty = int(risk_amount / sl_dist)
-        pos_qty = max(pos_qty, 0)
+def signal_quality(df: pd.DataFrame, i: int):
+    score = 0
+    rsi_val = df["RSI"].iloc[i]
+    vr = df["Vol_Ratio"].iloc[i]
+    atr_val = df["ATR"].iloc[i]
 
-        return {
-            "Symbol": ticker.replace(".NS", ""),
-            "Ticker": ticker,
-            "Date": str(df.index[i2])[:10],
-            "Entry": ep,
-            "SL": sl,
-            "TP1": tp1,
-            "TP2": tp2,
-            "R_R": rr,
-            "Quality": q["total"],
-            "Grade": q["grade"],
-            "RSI": round(float(df["RSI"].iloc[i2]), 1),
-            "Vol_Ratio": round(vr, 2),
-            "Squeeze_Fire": bool(df["Squeeze_Fire"].iloc[i2]),
-            "In_Squeeze": bool(df["Squeeze"].iloc[i2]),
-            "OFI": round(ofi, 3),
-            "Bull_Pat": bool(df["BullPat"].iloc[i2]),
-            "ATR": round(atr, 2),
-            "Risk_%": risk_pct,
-            "Risk_Amount": round(risk_amount, 2),
-            "Position_Qty": pos_qty,
-            "i1": i1,
-            "i2": i2,
-        }
-    except Exception:
-        return None
+    if 40 <= rsi_val <= 70:
+        score += 25
+    if vr > 1.2:
+        score += 25
+    if atr_val > df["ATR"].rolling(50).mean().iloc[i]:
+        score += 25
+    if df["Close"].iloc[i] > df["EMA200"].iloc[i]:
+        score += 25
 
-# ============================================================
-# BACKTEST ENGINE (B1 - SOLID, RISK IN % OF CAPITAL)
-# ============================================================
-
-def run_backtest(df, bull_divs, total_capital, risk_pct, trend_s, use_trend, trail=2.0, max_bars=20):
-    df = df.reset_index(drop=True)
-    if use_trend and trend_s is not None:
-        try:
-            ts = trend_s.reindex(range(len(df)), method="ffill")
-        except Exception:
-            ts = pd.Series(True, index=range(len(df)))
+    if score >= 80:
+        grade = "A"
+    elif score >= 60:
+        grade = "B"
+    elif score >= 40:
+        grade = "C"
     else:
-        ts = pd.Series(True, index=range(len(df)))
+        grade = "D"
 
-    slippage = 0.0005
-    brokerage = 0.0003
-    spread = 0.0002
+    return {"total": score, "grade": grade}
 
-    def apply_entry_costs(price):
-        return price * (1 + slippage + brokerage + spread)
+# ============================================================
+# SMART COLUMNS
+# ============================================================
 
-    def apply_exit_costs(price):
-        return price * (1 - slippage - brokerage - spread)
+def get_screener_columns_for_setup(setup_type: str):
+    if setup_type == "Divergence":
+        return [
+            "Symbol", "Ticker", "Date",
+            "Entry", "SL", "TP1", "TP2",
+            "R_R", "Quality", "Grade",
+            "RSI", "Vol_Ratio",
+        ]
+    elif setup_type == "BB Squeeze":
+        return [
+            "Symbol", "Ticker", "Date",
+            "Entry", "SL",
+            "Squeeze_Fire", "In_Squeeze",
+            "Vol_Ratio", "R_R", "Grade",
+        ]
+    elif setup_type == "High Volume Breakout":
+        return [
+            "Symbol", "Ticker", "Date",
+            "Entry", "SL",
+            "Breakout_Level", "Vol_Ratio",
+            "R_R", "Grade",
+        ]
+    elif setup_type == "Trend Pullback":
+        return [
+            "Symbol", "Ticker", "Date",
+            "Entry", "SL",
+            "EMA_Touch", "Reversal_Candle",
+            "R_R", "Grade",
+        ]
+    elif setup_type == "Liquidity Sweep":
+        return [
+            "Symbol", "Ticker", "Date",
+            "Entry", "SL",
+            "Sweep_Level", "OFI",
+            "R_R", "Grade",
+        ]
+    elif setup_type == "VCP Pattern":
+        return [
+            "Symbol", "Ticker", "Date",
+            "Entry", "SL",
+            "Contraction_Pct", "Vol_Dryup",
+            "R_R", "Grade",
+        ]
+    else:
+        return [
+            "Symbol", "Ticker", "Date",
+            "Entry", "SL", "R_R", "Grade",
+        ]
 
-    trades = []
-    eq = [total_capital]
+# ============================================================
+# SETUP MODULE 1 — DIVERGENCE
+# ============================================================
+
+def detect_divergence(df: pd.DataFrame, bars=5):
+    lm = swing_lows(df["Low"], bars)
+    hm = swing_highs(df["High"], bars)
+
+    li = np.where(lm)[0]
+    hi = np.where(hm)[0]
+
+    bull, bear = [], []
+
+    for j in range(1, len(li)):
+        i1, i2 = li[j - 1], li[j]
+        if (
+            df["Low"].iloc[i2] < df["Low"].iloc[i1] and
+            df["RSI"].iloc[i2] > df["RSI"].iloc[i1] and
+            df["MACD_Hist"].iloc[i2] > df["MACD_Hist"].iloc[i1]
+        ):
+            bull.append((i1, i2))
+
+    for j in range(1, len(hi)):
+        i1, i2 = hi[j - 1], hi[j]
+        if (
+            df["High"].iloc[i2] > df["High"].iloc[i1] and
+            df["RSI"].iloc[i2] < df["RSI"].iloc[i1] and
+            df["MACD_Hist"].iloc[i2] < df["MACD_Hist"].iloc[i1]
+        ):
+            bear.append((i1, i2))
+
+    return bull[-3:], bear[-3:]
+
+
+def scan_stock_divergence(
+    ticker: str,
+    interval: str,
+    use_trend: bool,
+    fresh_only: bool,
+    swing_bars: int,
+    min_q: int,
+    total_capital: float,
+    risk_pct: float,
+):
+    df = load_data(ticker, interval)
+    if df.empty or len(df) < 100:
+        return None
+
+    df = compute_indicators(df)
+    bull_divs, _ = detect_divergence(df, bars=swing_bars)
+
+    if not bull_divs:
+        return None
+
+    i1, i2 = bull_divs[-1]
+
+    if fresh_only and i2 < len(df) - 4:
+        return None
+
+    if use_trend:
+        tw = get_weekly_trend(ticker)
+        if tw is None:
+            return None
+        if not bool(tw.reindex(df.index, method="ffill").iloc[i2]):
+            return None
+
+    ei = i2 + 1
+    if ei >= len(df):
+        return None
+
+    ep = float(df["Open"].iloc[ei])
+    atr_val = float(df["ATR"].iloc[i2])
+    e200 = float(df["EMA200"].iloc[i2])
+    avwap_val = float(df["AVWAP"].iloc[i2])
+
+    if ep < e200 or ep < avwap_val or atr_val <= 0:
+        return None
+
+    q = signal_quality(df, i2)
+    if q["total"] < min_q:
+        return None
+
+    sl = round(ep - 1.5 * atr_val, 2)
+    tp1 = round(ep + 2 * atr_val, 2)
+    tp2 = round(ep + 4 * atr_val, 2)
+    rr = round((tp1 - ep) / (ep - sl), 2) if ep != sl else 0
+
     risk_amount = total_capital * risk_pct / 100.0
+    sl_dist = max(ep - sl, 0.01)
+    pos_qty = int(risk_amount / sl_dist)
+    pos_qty = max(pos_qty, 0)
 
-    for i1, i2 in bull_divs:
-        if not bool(ts.iloc[i2] if i2 < len(ts) else True):
-            continue
-        ei = i2 + 1
-        if ei >= len(df) - 1:
-            continue
+    vr_raw = df["Vol_Ratio"].iloc[i2]
+    vr = float(vr_raw) if not np.isnan(vr_raw) else 1.0
 
-        raw_open = float(df["Open"].iloc[ei])
-        ep = apply_entry_costs(raw_open)
+    ofi_raw = df["OFI"].iloc[i2]
+    ofi_val = float(ofi_raw) if not np.isnan(ofi_raw) else 0.0
 
-        atr = float(df["ATR"].iloc[i2])
-        e200 = float(df["EMA200"].iloc[i2])
-        avwap = float(df["AVWAP"].iloc[i2])
-        if ep < e200 or ep < avwap or atr <= 0:
-            continue
-
-        sl0 = ep - 1.5 * atr
-        tp1 = ep + 2 * atr
-        tp2 = ep + 4 * atr
-        rpp = ep - sl0
-        if rpp <= 0:
-            continue
-
-        qty = max(int(risk_amount / rpp), 1)
-        csl = sl0
-        pdone = False
-        xp = None
-        xi = None
-        xr = "TIME"
-        rem = qty
-
-        for j in range(ei + 1, min(ei + max_bars, len(df))):
-            hi = float(df["High"].iloc[j])
-            lo = float(df["Low"].iloc[j])
-            cl = float(df["Close"].iloc[j])
-
-            csl = max(csl, cl - trail * float(df["ATR"].iloc[j]))
-
-            if lo <= csl:
-                xp = csl
-                xi = j
-                xr = "SL"
-                break
-
-            if not pdone and hi >= tp1:
-                pdone = True
-                half = qty // 2
-                pnl1 = (apply_exit_costs(tp1) - ep) * half
-                trades.append({
-                    "Entry_Date": str(df.index[ei])[:10],
-                    "Exit_Date": str(df.index[j])[:10],
-                    "Entry": round(ep, 2),
-                    "Exit": round(apply_exit_costs(tp1), 2),
-                    "Qty": half,
-                    "PnL": round(pnl1, 2),
-                    "Reason": "TP1",
-                    "Ret_Pct": round((apply_exit_costs(tp1) - ep) / ep * 100, 2),
-                })
-                eq.append(eq[-1] + pnl1)
-                rem = qty - half
-                csl = ep
-
-            if hi >= tp2:
-                xp = tp2
-                xi = j
-                xr = "TP2"
-                break
-
-        if xp is None:
-            li = min(ei + max_bars - 1, len(df) - 1)
-            xp = float(df["Close"].iloc[li])
-            xi = li
-            xr = "TIME EXIT"
-
-        xp_net = apply_exit_costs(xp)
-        pnl = (xp_net - ep) * rem
-        ret = (xp_net - ep) / ep * 100
-        trades.append({
-            "Entry_Date": str(df.index[ei])[:10],
-            "Exit_Date": str(df.index[xi])[:10],
-            "Entry": round(ep, 2),
-            "Exit": round(xp_net, 2),
-            "Qty": rem,
-            "PnL": round(pnl, 2),
-            "Reason": xr,
-            "Ret_Pct": round(ret, 2),
-        })
-        eq.append(eq[-1] + pnl)
-
-    if not trades:
-        return pd.DataFrame(), {}
-
-    dft = pd.DataFrame(trades)
-    rets = dft["Ret_Pct"].values / 100
-    wins = rets[rets > 0]
-    losses = rets[rets < 0]
-    std = rets.std() if len(rets) > 1 else 1e-9
-    neg_std = losses.std() if len(losses) > 1 else 1e-9
-
-    sharpe = round(rets.mean() / std * (252 ** 0.5), 2) if std else 0
-    sortino = round(rets.mean() / neg_std * (252 ** 0.5), 2) if neg_std else 0
-
-    ea = np.array(eq)
-    pk = np.maximum.accumulate(ea)
-    dd = (pk - ea) / pk * 100
-    max_dd = float(dd.max())
-    calmar = round((ea[-1] - ea[0]) / ea[0] * 100 / max(max_dd, 0.01), 2)
-
-    wr = round(len(wins) / len(rets) * 100, 1) if len(rets) else 0
-    aw = round(wins.mean() * 100, 2) if len(wins) else 0
-    al = round(abs(losses.mean()) * 100, 2) if len(losses) else 0
-    pf = round(wins.sum() / abs(losses.sum()), 2) if len(losses) and losses.sum() != 0 else 99
-
-    p = len(wins) / len(rets) if len(rets) else 0.5
-    a = abs(losses.mean()) if len(losses) else 1e-9
-    b = wins.mean() if len(wins) else 1e-9
-    kelly = round(max(0, p / a - (1 - p) / b) * 100, 1) if a > 0 else 0
-
-    return dft, {
-        "Sharpe": sharpe,
-        "Sortino": sortino,
-        "Calmar": calmar,
-        "Win_Rate": wr,
-        "Avg_Win": aw,
-        "Avg_Loss": al,
-        "Profit_Factor": pf,
-        "Max_DD": round(max_dd, 2),
-        "Total_PnL": round(dft["PnL"].sum(), 2),
-        "Total_Return": round((ea[-1] - ea[0]) / ea[0] * 100, 2),
-        "Trades": len(dft),
-        "Kelly": kelly,
-        "Equity": eq,
+    return {
+        "Symbol": ticker.replace(".NS", ""),
+        "Ticker": ticker,
+        "Date": str(df.index[i2])[:10],
+        "Entry": ep,
+        "SL": sl,
+        "TP1": tp1,
+        "TP2": tp2,
+        "R_R": rr,
+        "Quality": q["total"],
+        "Grade": q["grade"],
+        "RSI": round(float(df["RSI"].iloc[i2]), 1),
+        "Vol_Ratio": round(vr, 2),
+        "OFI": round(ofi_val, 3),
+        "i1": i1,
+        "i2": i2,
+        "Position_Qty": pos_qty,
     }
 
 # ============================================================
-# AUTO TRADE STATE (STUB)
+# SETUP MODULE 2 — BB SQUEEZE
 # ============================================================
 
-def get_autotrade_state():
-    ss = st.session_state
-    ss.setdefault("at_active", False)
-    ss.setdefault("at_log", [])
-    ss.setdefault("at_pos", {})
-    ss.setdefault("at_pnl", 0.0)
-    ss.setdefault("at_mode", "paper")
+def detect_bb_squeeze(df: pd.DataFrame, squeeze_len: int = 10):
+    if not all(col in df.columns for col in ["BB_Upper", "BB_Lower", "KC_Upper", "KC_Lower"]):
+        return pd.Series(False, index=df.index)
 
-def paper_place_order(ticker, direction, qty, price, sl, tpl):
-    ts = time.strftime("%H:%M:%S")
-    entry = {
-        "time": ts,
-        "ticker": ticker,
-        "dir": direction,
-        "qty": qty,
-        "entry": price,
-        "sl": sl,
-        "tpl": tpl,
-        "status": "OPEN",
-        "pnl": 0.0,
-    }
-    st.session_state["at_pos"][ticker] = entry
-    st.session_state["at_log"].append(
-        f"[{ts}] PAPER {direction} {qty}x {ticker} @ {price:.2f} | SL:{sl:.2f} TP:{tpl:.2f}"
-    )
+    in_sq = (df["BB_Upper"] < df["KC_Upper"]) & (df["BB_Lower"] > df["KC_Lower"])
+    in_sq = in_sq.rolling(squeeze_len).apply(lambda x: 1 if x.all() else 0, raw=True).astype(bool)
+    return in_sq
 
-def paper_check_exits():
-    to_close = []
-    for tk, pos in st.session_state["at_pos"].items():
-        if pos["status"] != "OPEN":
-            continue
-        try:
-            df = load_data(tk, "1d", years=1)
-            if df.empty:
-                continue
-            last = df.iloc[-1]
-            hi = float(last["High"])
-            lo = float(last["Low"])
-            if lo <= pos["sl"]:
-                pnl = (pos["sl"] - pos["entry"]) * pos["qty"]
-                st.session_state["at_pnl"] += pnl
-                st.session_state["at_log"].append(
-                    f"[EXIT-SL] {tk} @ {pos['sl']:.2f} | PnL: INR {pnl:.0f}"
-                )
-                to_close.append(tk)
-            elif hi >= pos["tpl"]:
-                pnl = (pos["tpl"] - pos["entry"]) * pos["qty"]
-                st.session_state["at_pnl"] += pnl
-                st.session_state["at_log"].append(
-                    f"[EXIT-TP] {tk} @ {pos['tpl']:.2f} | PnL: INR {pnl:.0f}"
-                )
-                to_close.append(tk)
-        except Exception:
-            continue
-    for tk in to_close:
-        st.session_state["at_pos"][tk]["status"] = "CLOSED"
 
-# ============================================================
-# VOLUME PROFILE & LIQUIDITY
-# ============================================================
+def detect_squeeze_fire(df: pd.DataFrame, in_squeeze: pd.Series):
+    squeeze_fire = pd.Series(False, index=df.index)
+    for i in range(1, len(df)):
+        if in_squeeze.iloc[i - 1] and not in_squeeze.iloc[i]:
+            squeeze_fire.iloc[i] = True
+    return squeeze_fire
 
-def volume_profile(df: pd.DataFrame, bins=40):
-    if df is None or df.empty:
-        return None, None, None, None, None
 
-    prices = df["Close"].dropna()
-    vols = df["Volume"].dropna()
+def scan_stock_bb_squeeze(
+    ticker: str,
+    interval: str,
+    use_trend: bool,
+    fresh_only: bool,
+    swing_bars: int,
+    min_q: int,
+    total_capital: float,
+    risk_pct: float,
+    sq_only: bool = True,
+):
+    df = load_data(ticker, interval)
+    if df.empty or len(df) < 100:
+        return None
 
-    if len(prices) < 10:
-        return None, None, None, None, None
-    if prices.max() == prices.min():
-        return None, None, None, None, None
+    df = compute_indicators(df)
 
-    bins = min(bins, max(5, len(prices) // 2))
+    in_squeeze = detect_bb_squeeze(df, squeeze_len=10)
+    squeeze_fire = detect_squeeze_fire(df, in_squeeze)
 
-    hist, bin_edges = np.histogram(prices, bins=bins, weights=vols)
-    if hist.max() == 0:
-        return None, None, None, None, None
+    df["In_Squeeze"] = in_squeeze
+    df["Squeeze_Fire"] = squeeze_fire
 
-    centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-    poc_idx = np.argmax(hist)
-    poc = centers[poc_idx]
+    idx_candidates = []
 
-    total_vol = hist.sum()
-    sorted_idx = np.argsort(hist)[::-1]
-    cum = 0
-    included = []
-    for i in sorted_idx:
-        cum += hist[i]
-        included.append(i)
-        if cum >= 0.7 * total_vol:
+    for i in range(len(df) - 1, -1, -1):
+        if squeeze_fire.iloc[i]:
+            idx_candidates.append(i)
             break
 
-    val = centers[min(included)]
-    vah = centers[max(included)]
-    return centers, hist, poc, val, vah
+    if not idx_candidates and not sq_only:
+        for i in range(len(df) - 1, -1, -1):
+            if in_squeeze.iloc[i]:
+                idx_candidates.append(i)
+                break
 
-def session_volume_profile(df: pd.DataFrame):
-    dfc = df.copy()
-    dfc["date"] = dfc.index.date
-    profiles = {}
-    last_idx = {}
-    for d in dfc["date"].unique():
-        sub = dfc[dfc["date"] == d]
-        if len(sub) < 10:
-            continue
-        centers, hist, poc, val, vah = volume_profile(sub, bins=25)
-        if centers is None:
-            continue
-        profiles[d] = (centers, hist, poc, val, vah)
-        last_idx[d] = sub.index[-1]
-    return profiles, last_idx
+    if not idx_candidates:
+        return None
 
-def hvn_lvn_nodes(hist, centers, threshold=0.65):
-    max_vol = hist.max()
-    if max_vol <= 0:
-        return [], []
-    hvn = centers[hist >= max_vol * threshold]
-    lvn = centers[hist <= max_vol * 0.15]
-    return hvn, lvn
+    i2 = idx_candidates[0]
 
-def liquidity_zones(df: pd.DataFrame, bars=5, tolerance=0.15):
-    highs = df["High"].values
-    lows = df["Low"].values
+    if fresh_only and i2 < len(df) - 5:
+        return None
 
-    eqh = []
-    eql = []
-    pools_high = []
-    pools_low = []
+    if use_trend:
+        tw = get_weekly_trend(ticker)
+        if tw is None:
+            return None
+        if not bool(tw.reindex(df.index, method="ffill").iloc[i2]):
+            return None
 
-    for i in range(bars, len(df) - bars):
-        if abs(highs[i] - highs[i - 1]) <= tolerance:
-            eqh.append((df.index[i], highs[i]))
-        if abs(lows[i] - lows[i - 1]) <= tolerance:
-            eql.append((df.index[i], lows[i]))
+    ei = i2 + 1
+    if ei >= len(df):
+        return None
 
-    wick_high = df["High"] - df[["Open", "Close"]].max(axis=1)
-    wick_low = df[["Open", "Close"]].min(axis=1) - df["Low"]
+    ep = float(df["Open"].iloc[ei])
+    atr_val = float(df["ATR"].iloc[i2])
+    e200 = float(df["EMA200"].iloc[i2])
+    avwap_val = float(df["AVWAP"].iloc[i2])
 
-    wh_mean = wick_high.mean()
-    wl_mean = wick_low.mean()
+    if ep < e200 or ep < avwap_val or atr_val <= 0:
+        return None
 
-    for i in range(len(df)):
-        if wick_high.iloc[i] > wh_mean * 2:
-            pools_high.append((df.index[i], df["High"].iloc[i]))
-        if wick_low.iloc[i] > wl_mean * 2:
-            pools_low.append((df.index[i], df["Low"].iloc[i]))
+    q = signal_quality(df, i2)
+    if q["total"] < min_q:
+        return None
 
-    return eqh, eql, pools_high, pools_low
+    sl = round(ep - 1.2 * atr_val, 2)
+    tp1 = round(ep + 2.2 * atr_val, 2)
+    tp2 = round(ep + 4.0 * atr_val, 2)
+    rr = round((tp1 - ep) / (ep - sl), 2) if ep != sl else 0
+
+    risk_amount = total_capital * risk_pct / 100.0
+    sl_dist = max(ep - sl, 0.01)
+    pos_qty = int(risk_amount / sl_dist)
+    pos_qty = max(pos_qty, 0)
+
+    vr_raw = df["Vol_Ratio"].iloc[i2]
+    vr = float(vr_raw) if not np.isnan(vr_raw) else 1.0
+
+    ofi_raw = df["OFI"].iloc[i2]
+    ofi_val = float(ofi_raw) if not np.isnan(ofi_raw) else 0.0
+
+    return {
+        "Symbol": ticker.replace(".NS", ""),
+        "Ticker": ticker,
+        "Date": str(df.index[i2])[:10],
+        "Entry": ep,
+        "SL": sl,
+        "TP1": tp1,
+        "TP2": tp2,
+        "R_R": rr,
+        "Grade": q["grade"],
+        "RSI": round(float(df["RSI"].iloc[i2]), 1),
+        "Vol_Ratio": round(vr, 2),
+        "OFI": round(ofi_val, 3),
+        "In_Squeeze": bool(in_squeeze.iloc[i2]),
+        "Squeeze_Fire": bool(squeeze_fire.iloc[i2]),
+        "i2": i2,
+        "Position_Qty": pos_qty,
+    }
 
 # ============================================================
-# CHARTS
+# SETUP MODULE 3 — HIGH VOLUME BREAKOUT
 # ============================================================
 
-def plot_chart(
-    df: pd.DataFrame,
-    bull_divs,
-    bear_divs,
+def find_recent_resistance(df: pd.DataFrame, lookback: int = 40):
+    if len(df) < lookback + 5:
+        return None, None
+
+    highs = df["High"].iloc[-lookback:]
+    idx_local = highs[(highs.shift(1) < highs) & (highs.shift(-1) < highs)].index
+    if len(idx_local) == 0:
+        return None, None
+
+    i_res = idx_local[-1]
+    level = df.loc[i_res, "High"]
+    return float(level), i_res
+
+
+def scan_stock_breakout(
     ticker: str,
-    show_top=True,
-    show_bottom=True,
-    show_rtop=False,
-    show_rbot=False,
-    show_vp=True,
-    show_vp_session=False,
-    show_hvn_lvn=False,
-    show_liq=True,
-    show_eqh_eql=True,
-    show_pools=True,
+    interval: str,
+    use_trend: bool,
+    fresh_only: bool,
+    swing_bars: int,
+    min_q: int,
+    total_capital: float,
+    risk_pct: float,
 ):
-    df = compute_avwaps(df)
-    plot_theme = st.session_state.get("plot_theme", "plotly_dark")
-    gold = st.session_state.get("gold", "#f7e7ce")
+    df = load_data(ticker, interval)
+    if df.empty or len(df) < 120:
+        return None
 
-    fig = make_subplots(
-        rows=4,
-        cols=1,
-        shared_xaxes=True,
-        row_heights=[0.50, 0.14, 0.18, 0.18],
-        vertical_spacing=0.02,
-        subplot_titles=[ticker, "Volume / OFI", "RSI (14)", "MACD"],
-    )
+    df = compute_indicators(df)
 
-    fig.add_trace(
-        go.Candlestick(
-            x=df.index,
-            open=df["Open"],
-            high=df["High"],
-            low=df["Low"],
-            close=df["Close"],
-            name="Price",
-            increasing_line_color="#3fb950",
-            decreasing_line_color="#f85149",
-            increasing_fillcolor="#3fb950",
-            decreasing_fillcolor="#f85149",
-        ),
-        row=1,
-        col=1,
-    )
+    res_level, res_idx = find_recent_resistance(df, lookback=50)
+    if res_level is None:
+        return None
 
-    for sp, col, nm in [
-        (21, "#e3b341", "EMA21"),
-        (50, "#58a6ff", "EMA50"),
-        (200, gold, "EMA200"),
-    ]:
-        colname = f"EMA{sp}"
-        if colname in df.columns:
-            fig.add_trace(
-                go.Scatter(
-                    x=df.index,
-                    y=df[colname],
-                    line=dict(color=col, width=1.5),
-                    name=nm,
-                    opacity=0.9,
-                ),
-                row=1,
-                col=1,
-            )
+    i2 = len(df) - 2
+    if i2 <= res_idx:
+        return None
 
-    if "AVWAP" in df.columns:
-        fig.add_trace(
-            go.Scatter(
-                x=df.index,
-                y=df["AVWAP"],
-                line=dict(color=gold, width=2, dash="dash"),
-                name="AVWAP",
-            ),
-            row=1,
-            col=1,
-        )
+    close_i2 = float(df["Close"].iloc[i2])
+    vol_i2 = float(df["Volume"].iloc[i2])
+    vol_ma = float(df["Volume"].rolling(20).mean().iloc[i2])
 
-    avwap_lines = [
-        ("VWAP_TOP", "#f85149", "AVWAP Major Top", show_top),
-        ("VWAP_BOT", "#3fb950", "AVWAP Major Bottom", show_bottom),
-        ("VWAP_RTOP", "#ff73fa", "AVWAP Recent Top", show_rtop),
-        ("VWAP_RBOT", "#73ffb2", "AVWAP Recent Bottom", show_rbot),
-    ]
-    for col_name, color, name, flag in avwap_lines:
-        if flag and col_name in df.columns:
-            fig.add_trace(
-                go.Scatter(
-                    x=df.index,
-                    y=df[col_name],
-                    line=dict(color=color, width=1.8, dash="dot"),
-                    name=name,
-                    opacity=0.85,
-                ),
-                row=1,
-                col=1,
-            )
+    if vol_ma <= 0:
+        return None
 
-    fig.add_trace(
-        go.Bar(
-            x=df.index,
-            y=df["Volume"],
-            marker_color=[
-                "#3fb950" if c >= o else "#f85149"
-                for c, o in zip(df["Close"], df["Open"])
-            ],
-            opacity=0.55,
-            name="Volume",
-        ),
-        row=2,
-        col=1,
-    )
+    vol_ratio_val = vol_i2 / vol_ma
 
-    fig.add_trace(
-        go.Scatter(
-            x=df.index,
-            y=df["RSI"],
-            line=dict(color="#58a6ff", width=1.5),
-            name="RSI",
-        ),
-        row=3,
-        col=1,
-    )
+    if close_i2 <= res_level:
+        return None
+    if vol_ratio_val < 2.0:
+        return None
 
-    for divs, col, color in [
-        (bull_divs, "Low", "#3fb950"),
-        (bear_divs, "High", "#f85149"),
-    ]:
-        for i1, i2 in divs[-1:]:
-            fig.add_trace(
-                go.Scatter(
-                    x=[df.index[i1], df.index[i2]],
-                    y=[df[col].iloc[i1], df[col].iloc[i2]],
-                    mode="markers+lines",
-                    marker=dict(color=color, size=12),
-                    line=dict(color=color, width=2.5),
-                ),
-                row=1,
-                col=1,
-            )
+    if fresh_only and i2 < len(df) - 4:
+        return None
 
-    fig.add_trace(
-        go.Bar(
-            x=df.index,
-            y=df["MACD_Hist"],
-            marker_color=[
-                "#3fb950" if v >= 0 else "#f85149"
-                for v in df["MACD_Hist"]
-            ],
-            name="MACD Hist",
-        ),
-        row=4,
-        col=1,
-    )
+    if use_trend:
+        tw = get_weekly_trend(ticker)
+        if tw is None:
+            return None
+        if not bool(tw.reindex(df.index, method="ffill").iloc[i2]):
+            return None
 
-    if show_vp:
-        centers, hist, poc, val, vah = volume_profile(df)
-        if centers is not None:
-            price_range = df["High"].max() - df["Low"].min()
-            hist_scaled = hist / hist.max() * price_range * 0.15
-            fig.add_trace(
-                go.Bar(
-                    x=[df.index[-1]] * len(centers),
-                    y=centers,
-                    width=hist_scaled,
-                    orientation="h",
-                    marker_color="#444",
-                    opacity=0.35,
-                    showlegend=False,
-                    name="Volume Profile",
-                ),
-                row=1,
-                col=1,
-            )
-            fig.add_hline(
-                y=poc,
-                line_color=gold,
-                line_width=2,
-                annotation_text="POC",
-                row=1,
-                col=1,
-            )
-            fig.add_hline(
-                y=vah,
-                line_color=gold,
-                line_width=1.5,
-                annotation_text="VAH",
-                row=1,
-                col=1,
-            )
-            fig.add_hline(
-                y=val,
-                line_color=gold,
-                line_width=1.5,
-                annotation_text="VAL",
-                row=1,
-                col=1,
-            )
-            if show_hvn_lvn:
-                hvn, lvn = hvn_lvn_nodes(hist, centers)
-                for h in hvn:
-                    fig.add_hline(
-                        y=h,
-                        line_color="#00ffcc",
-                        line_width=1,
-                        opacity=0.6,
-                        row=1,
-                        col=1,
-                    )
-                for l in lvn:
-                    fig.add_hline(
-                        y=l,
-                        line_color="#ff00cc",
-                        line_width=1,
-                        opacity=0.6,
-                        row=1,
-                        col=1,
-                    )
+    e200 = float(df["EMA200"].iloc[i2])
+    avwap_val = float(df["AVWAP"].iloc[i2])
+    if close_i2 < e200 or close_i2 < avwap_val:
+        return None
 
-    if show_vp_session:
-        profiles, last_idx = session_volume_profile(df)
-        price_range = df["High"].max() - df["Low"].min()
-        for d, (centers, hist, poc, val, vah) in profiles.items():
-            if hist.max() <= 0:
-                continue
-            hist_scaled = hist / hist.max() * price_range * 0.08
-            li = last_idx[d]
-            fig.add_trace(
-                go.Bar(
-                    x=[li] * len(centers),
-                    y=centers,
-                    width=hist_scaled,
-                    orientation="h",
-                    marker_color="#666",
-                    opacity=0.25,
-                    showlegend=False,
-                    name=f"Session VP {d}",
-                ),
-                row=1,
-                col=1,
-            )
+    atr_val = float(df["ATR"].iloc[i2])
+    if atr_val <= 0:
+        return None
 
-    if show_liq:
-        eqh, eql, pools_high, pools_low = liquidity_zones(df)
-        if show_eqh_eql:
-            for _, lvl in eqh:
-                fig.add_hline(
-                    y=lvl,
-                    line_color="#ff4d4d",
-                    line_width=1,
-                    opacity=0.6,
-                    annotation_text="EQH",
-                    row=1,
-                    col=1,
-                )
-            for _, lvl in eql:
-                fig.add_hline(
-                    y=lvl,
-                    line_color="#4dff4d",
-                    line_width=1,
-                    opacity=0.6,
-                    annotation_text="EQL",
-                    row=1,
-                    col=1,
-                )
-        if show_pools:
-            for t, lvl in pools_high:
-                fig.add_trace(
-                    go.Scatter(
-                        x=[t],
-                        y=[lvl],
-                        mode="markers",
-                        marker=dict(
-                            color="#ff00aa",
-                            size=10,
-                            symbol="triangle-up",
-                        ),
-                        name="Buy-Side Liquidity",
-                    ),
-                    row=1,
-                    col=1,
-                )
-            for t, lvl in pools_low:
-                fig.add_trace(
-                    go.Scatter(
-                        x=[t],
-                        y=[lvl],
-                        mode="markers",
-                        marker=dict(
-                            color="#00ffaa",
-                            size=10,
-                            symbol="triangle-down",
-                        ),
-                        name="Sell-Side Liquidity",
-                    ),
-                    row=1,
-                    col=1,
-                )
+    ei = i2 + 1
+    if ei >= len(df):
+        return None
+    ep = float(df["Open"].iloc[ei])
 
-    fig.update_layout(
-        height=900,
-        template=plot_theme,
-        paper_bgcolor="#050608",
-        plot_bgcolor="#050608",
-        xaxis_rangeslider_visible=False,
-        margin=dict(l=8, r=8, t=36, b=8),
-    )
-    return fig
+    q = signal_quality(df, i2)
+    if q["total"] < min_q:
+        return None
 
-def plot_equity(eq_list):
-    ea = np.array(eq_list)
-    pk = np.maximum.accumulate(ea)
-    dd = (pk - ea) / pk * 100
-    plot_theme = st.session_state.get("plot_theme", "plotly_dark")
+    sl = round(res_level - 0.8 * atr_val, 2)
+    tp1 = round(ep + 2.0 * atr_val, 2)
+    tp2 = round(ep + 4.0 * atr_val, 2)
+    rr = round((tp1 - ep) / (ep - sl), 2) if ep != sl else 0
 
-    fig = make_subplots(
-        rows=2,
-        cols=1,
-        shared_xaxes=True,
-        row_heights=[0.65, 0.35],
-        subplot_titles=["Equity Curve", "Drawdown %"],
-    )
+    risk_amount = total_capital * risk_pct / 100.0
+    sl_dist = max(ep - sl, 0.01)
+    pos_qty = int(risk_amount / sl_dist)
+    pos_qty = max(pos_qty, 0)
 
-    fig.add_trace(
-        go.Scatter(
-            x=list(range(len(ea))),
-            y=ea,
-            fill="tozeroy",
-            line=dict(color="#3fb950", width=2),
-            name="Equity",
-        ),
-        row=1,
-        col=1,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=list(range(len(ea))),
-            y=-dd,
-            fill="tozeroy",
-            line=dict(color="#f85149", width=1.5),
-            name="DD%",
-        ),
-        row=2,
-        col=1,
-    )
+    vr_raw = df["Vol_Ratio"].iloc[i2]
+    vr = float(vr_raw) if not np.isnan(vr_raw) else round(vol_ratio_val, 2)
 
-    fig.update_layout(
-        height=380,
-        template=plot_theme,
-        paper_bgcolor="#050608",
-        plot_bgcolor="#050608",
-        margin=dict(l=8, r=8, t=36, b=8),
-    )
-    return fig
+    ofi_raw = df["OFI"].iloc[i2]
+    ofi_val = float(ofi_raw) if not np.isnan(ofi_raw) else 0.0
+
+    return {
+        "Symbol": ticker.replace(".NS", ""),
+        "Ticker": ticker,
+        "Date": str(df.index[i2])[:10],
+        "Entry": ep,
+        "SL": sl,
+        "TP1": tp1,
+        "TP2": tp2,
+        "R_R": rr,
+        "Grade": q["grade"],
+        "RSI": round(float(df["RSI"].iloc[i2]), 1),
+        "Vol_Ratio": round(vr, 2),
+        "OFI": round(ofi_val, 3),
+        "Breakout_Level": round(res_level, 2),
+        "i2": i2,
+        "Position_Qty": pos_qty,
+    }
 
 # ============================================================
-# PAGES
+# SETUP MODULE 4 — TREND PULLBACK
 # ============================================================
 
-def show_dashboard():
-    st.markdown(
-        """
-        <div class="royal-card">
-            <div class="royal-title">SNIPER TERMINAL v2</div>
-            <div class="royal-subtitle">ROYAL INSTITUTIONAL EDITION · DIVERGENCE · AVWAP · VOLUME PROFILE · LIQUIDITY</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+def detect_reversal_candle(df: pd.DataFrame, i: int):
+    if i <= 0 or i >= len(df):
+        return False
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("NIFTY (Mock)", "↑ 0.82%")
-    c2.metric("BANKNIFTY (Mock)", "↑ 1.12%")
-    c3.metric("INDIA VIX (Mock)", "↓ 3.5%")
+    o = df["Open"].iloc[i]
+    c = df["Close"].iloc[i]
+    h = df["High"].iloc[i]
+    l = df["Low"].iloc[i]
 
-    st.markdown('<div class="royal-card">', unsafe_allow_html=True)
-    st.markdown("### Watchlist (Sample)")
-    st.dataframe(
-        pd.DataFrame(
-            {
-                "Symbol": ["HAL", "TCS", "RELIANCE"],
-                "Ticker": ["HAL.NS", "TCS.NS", "RELIANCE.NS"],
-                "Bias": ["Bullish", "Neutral", "Bullish"],
-                "Notes": ["Recent divergence", "Range", "Above AVWAP"],
-            }
-        ),
-        use_container_width=True,
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
+    body = abs(c - o)
+    lower_wick = o - l if c >= o else c - l
+    upper_wick = h - max(o, c)
+
+    if body <= 0:
+        return False
+
+    if c > o and lower_wick > body * 1.2 and lower_wick > upper_wick:
+        return True
+    return False
+
+
+def scan_stock_pullback(
+    ticker: str,
+    interval: str,
+    use_trend: bool,
+    fresh_only: bool,
+    swing_bars: int,
+    min_q: int,
+    total_capital: float,
+    risk_pct: float,
+):
+    df = load_data(ticker, interval)
+    if df.empty or len(df) < 120:
+        return None
+
+    df = compute_indicators(df)
+
+    i2 = len(df) - 2
+    if i2 < 20:
+        return None
+
+    ema21 = df["EMA21"].iloc[i2]
+    ema50 = df["EMA50"].iloc[i2]
+    ema200 = df["EMA200"].iloc[i2]
+    close_i2 = df["Close"].iloc[i2]
+
+    if not (close_i2 > ema21 and close_i2 > ema50 and close_i2 > ema200):
+        return None
+
+    recent_lows = df["Low"].iloc[i2 - 5 : i2 + 1]
+    near_ema = (abs(recent_lows - ema21) / ema21 < 0.02) | (abs(recent_lows - ema50) / ema50 < 0.02)
+    if not near_ema.any():
+        return None
+
+    if not detect_reversal_candle(df, i2):
+        return None
+
+    vol = df["Volume"]
+    vol_pullback = vol.iloc[i2 - 5 : i2]
+    vol_rev = vol.iloc[i2]
+
+    if vol_pullback.mean() <= 0:
+        return None
+
+    if not (vol_rev > vol_pullback.mean() * 1.2):
+        return None
+
+    if fresh_only and i2 < len(df) - 4:
+        return None
+
+    if use_trend:
+        tw = get_weekly_trend(ticker)
+        if tw is None:
+            return None
+        if not bool(tw.reindex(df.index, method="ffill").iloc[i2]):
+            return None
+
+    atr_val = float(df["ATR"].iloc[i2])
+    if atr_val <= 0:
+        return None
+
+    ei = i2 + 1
+    if ei >= len(df):
+        return None
+    ep = float(df["Open"].iloc[ei])
+
+    q = signal_quality(df, i2)
+    if q["total"] < min_q:
+        return None
+
+    sl = round(df["Low"].iloc[i2] - 0.5 * atr_val, 2)
+    tp1 = round(ep + 2.0 * atr_val, 2)
+    tp2 = round(ep + 4.0 * atr_val, 2)
+    rr = round((tp1 - ep) / (ep - sl), 2) if ep != sl else 0
+
+    risk_amount = total_capital * risk_pct / 100.0
+    sl_dist = max(ep - sl, 0.01)
+    pos_qty = int(risk_amount / sl_dist)
+    pos_qty = max(pos_qty, 0)
+
+    vr_raw = df["Vol_Ratio"].iloc[i2]
+    vr = float(vr_raw) if not np.isnan(vr_raw) else 1.0
+
+    ofi_raw = df["OFI"].iloc[i2]
+    ofi_val = float(ofi_raw) if not np.isnan(ofi_raw) else 0.0
+
+    return {
+        "Symbol": ticker.replace(".NS", ""),
+        "Ticker": ticker,
+        "Date": str(df.index[i2])[:10],
+        "Entry": ep,
+        "SL": sl,
+        "TP1": tp1,
+        "TP2": tp2,
+        "R_R": rr,
+        "Grade": q["grade"],
+        "RSI": round(float(df["RSI"].iloc[i2]), 1),
+        "Vol_Ratio": round(vr, 2),
+        "OFI": round(ofi_val, 3),
+        "EMA_Touch": "EMA21/50 Pullback",
+        "Reversal_Candle": True,
+        "i2": i2,
+        "Position_Qty": pos_qty,
+    }
+
+# ============================================================
+# SETUP MODULE 5 — LIQUIDITY SWEEP
+# ============================================================
+
+def is_stop_hunt_wick(df: pd.DataFrame, i: int, side: str = "bull"):
+    if i <= 1 or i >= len(df):
+        return False
+
+    o = df["Open"].iloc[i]
+    c = df["Close"].iloc[i]
+    h = df["High"].iloc[i]
+    l = df["Low"].iloc[i]
+
+    body = abs(c - o)
+    if body <= 0:
+        return False
+
+    if side == "bull":
+        lower_wick = min(o, c) - l
+        upper_wick = h - max(o, c)
+        if lower_wick <= 0:
+            return False
+        prev_low = df["Low"].iloc[i - 1]
+        if (
+            lower_wick > body * 1.5
+            and lower_wick > upper_wick
+            and c > prev_low
+        ):
+            return True
+    else:
+        upper_wick = h - max(o, c)
+        lower_wick = min(o, c) - l
+        if upper_wick <= 0:
+            return False
+        prev_high = df["High"].iloc[i - 1]
+        if (
+            upper_wick > body * 1.5
+            and upper_wick > lower_wick
+            and c < prev_high
+        ):
+            return True
+
+    return False
+
+
+def scan_stock_sweep(
+    ticker: str,
+    interval: str,
+    use_trend: bool,
+    fresh_only: bool,
+    swing_bars: int,
+    min_q: int,
+    total_capital: float,
+    risk_pct: float,
+):
+    df = load_data(ticker, interval)
+    if df.empty or len(df) < 80:
+        return None
+
+    df = compute_indicators(df)
+
+    i2 = len(df) - 2
+    if i2 < 5:
+        return None
+
+    if not is_stop_hunt_wick(df, i2, side="bull"):
+        return None
+
+    vol = df["Volume"]
+    vol_ma = vol.rolling(20).mean()
+    if vol_ma.iloc[i2] <= 0:
+        return None
+    if vol.iloc[i2] < vol_ma.iloc[i2] * 1.5:
+        return None
+
+    ofi_raw = df["OFI"].iloc[i2]
+    if np.isnan(ofi_raw) or ofi_raw <= 0:
+        return None
+
+    if fresh_only and i2 < len(df) - 4:
+        return None
+
+    if use_trend:
+        tw = get_weekly_trend(ticker)
+        if tw is None:
+            return None
+        if not bool(tw.reindex(df.index, method="ffill").iloc[i2]):
+            return None
+
+    atr_val = float(df["ATR"].iloc[i2])
+    if atr_val <= 0:
+        return None
+
+    ei = i2 + 1
+    if ei >= len(df):
+        return None
+    ep = float(df["Open"].iloc[ei])
+
+    q = signal_quality(df, i2)
+    if q["total"] < min_q:
+        return None
+
+    sl = round(df["Low"].iloc[i2] - 0.3 * atr_val, 2)
+    tp1 = round(ep + 2.5 * atr_val, 2)
+    tp2 = round(ep + 5.0 * atr_val, 2)
+    rr = round((tp1 - ep) / (ep - sl), 2) if ep != sl else 0
+
+    risk_amount = total_capital * risk_pct / 100.0
+    sl_dist = max(ep - sl, 0.01)
+    pos_qty = int(risk_amount / sl_dist)
+    pos_qty = max(pos_qty, 0)
+
+    vr_raw = df["Vol_Ratio"].iloc[i2]
+    vr = float(vr_raw) if not np.isnan(vr_raw) else float(vol.iloc[i2] / max(vol_ma.iloc[i2], 1))
+
+    return {
+        "Symbol": ticker.replace(".NS", ""),
+        "Ticker": ticker,
+        "Date": str(df.index[i2])[:10],
+        "Entry": ep,
+        "SL": sl,
+        "TP1": tp1,
+        "TP2": tp2,
+        "R_R": rr,
+        "Grade": q["grade"],
+        "RSI": round(float(df["RSI"].iloc[i2]), 1),
+        "Vol_Ratio": round(vr, 2),
+        "OFI": round(float(ofi_raw), 3),
+        "Sweep_Level": round(float(df["Low"].iloc[i2]), 2),
+        "i2": i2,
+        "Position_Qty": pos_qty,
+    }
+
+# ============================================================
+# SETUP MODULE 6 — VCP
+# ============================================================
+
+def compute_contraction_series(df: pd.DataFrame, lookback: int = 60):
+    if len(df) < lookback + 10:
+        return []
+
+    sub = df.iloc[-lookback:]
+    highs = sub["High"]
+    lows = sub["Low"]
+
+    swing_high_idx = highs[(highs.shift(1) < highs) & (highs.shift(-1) < highs)].index
+    swing_low_idx = lows[(lows.shift(1) > lows) & (lows.shift(-1) > lows)].index
+
+    pivots = sorted(list(swing_high_idx) + list(swing_low_idx))
+    if len(pivots) < 4:
+        return []
+
+    contractions = []
+    for i in range(2, len(pivots)):
+        i_start = pivots[i - 2]
+        i_end = pivots[i]
+        h = df.loc[i_start:i_end, "High"].max()
+        l = df.loc[i_start:i_end, "Low"].min()
+        if l <= 0:
+            continue
+        pct_range = (h - l) / l * 100.0
+        contractions.append((i_start, i_end, pct_range))
+
+    return contractions[-3:]
+
+
+def scan_stock_vcp(
+    ticker: str,
+    interval: str,
+    use_trend: bool,
+    fresh_only: bool,
+    swing_bars: int,
+    min_q: int,
+    total_capital: float,
+    risk_pct: float,
+):
+    df = load_data(ticker, interval)
+    if df.empty or len(df) < 150:
+        return None
+
+    df = compute_indicators(df)
+
+    contractions = compute_contraction_series(df, lookback=80)
+    if len(contractions) < 2:
+        return None
+
+    pct_ranges = [c[2] for c in contractions]
+    if not (pct_ranges[-1] < pct_ranges[-2]):
+        return None
+
+    _, i_pivot, _ = contractions[-1]
+    if i_pivot >= len(df) - 3:
+        return None
+
+    pivot_high = df["High"].loc[:i_pivot].max()
+
+    vol = df["Volume"]
+    vol_pivot_zone = vol.loc[i_pivot - 10 : i_pivot]
+    vol_prev_zone = vol.loc[i_pivot - 30 : i_pivot - 11] if i_pivot - 30 >= 0 else None
+
+    if vol_prev_zone is None or len(vol_prev_zone) < 5:
+        return None
+
+    if vol_pivot_zone.mean() >= vol_prev_zone.mean():
+        return None
+
+    i2 = len(df) - 2
+    if i2 <= i_pivot:
+        return None
+
+    close_i2 = df["Close"].iloc[i2]
+    if close_i2 <= pivot_high:
+        return None
+
+    vol_ma = vol.rolling(20).mean()
+    if vol_ma.iloc[i2] <= 0:
+        return None
+    if vol.iloc[i2] < vol_ma.iloc[i2] * 1.5:
+        return None
+
+    if fresh_only and i2 < len(df) - 4:
+        return None
+
+    if use_trend:
+        tw = get_weekly_trend(ticker)
+        if tw is None:
+            return None
+        if not bool(tw.reindex(df.index, method="ffill").iloc[i2]):
+            return None
+
+    e200 = float(df["EMA200"].iloc[i2])
+    avwap_val = float(df["AVWAP"].iloc[i2])
+    if close_i2 < e200 or close_i2 < avwap_val:
+        return None
+
+    atr_val = float(df["ATR"].iloc[i2])
+    if atr_val <= 0:
+        return None
+
+    ei = i2 + 1
+    if ei >= len(df):
+        return None
+    ep = float(df["Open"].iloc[ei])
+
+    q = signal_quality(df, i2)
+    if q["total"] < min_q:
+        return None
+
+    sl = round(pivot_high - 0.8 * atr_val, 2)
+    tp1 = round(ep + 2.5 * atr_val, 2)
+    tp2 = round(ep + 5.0 * atr_val, 2)
+    rr = round((tp1 - ep) / (ep - sl), 2) if ep != sl else 0
+
+    risk_amount = total_capital * risk_pct / 100.0
+    sl_dist = max(ep - sl, 0.01)
+    pos_qty = int(risk_amount / sl_dist)
+    pos_qty = max(pos_qty, 0)
+
+    vr_raw = df["Vol_Ratio"].iloc[i2]
+    vr = float(vr_raw) if not np.isnan(vr_raw) else float(vol.iloc[i2] / max(vol_ma.iloc[i2], 1))
+
+    ofi_raw = df["OFI"].iloc[i2]
+    ofi_val = float(ofi_raw) if not np.isnan(ofi_raw) else 0.0
+
+    contraction_pct = pct_ranges[-1]
+
+    return {
+        "Symbol": ticker.replace(".NS", ""),
+        "Ticker": ticker,
+        "Date": str(df.index[i2])[:10],
+        "Entry": ep,
+        "SL": sl,
+        "TP1": tp1,
+        "TP2": tp2,
+        "R_R": rr,
+        "Grade": q["grade"],
+        "RSI": round(float(df["RSI"].iloc[i2]), 1),
+        "Vol_Ratio": round(vr, 2),
+        "OFI": round(ofi_val, 3),
+        "Contraction_Pct": round(contraction_pct, 2),
+        "Vol_Dryup": True,
+        "i2": i2,
+        "Position_Qty": pos_qty,
+    }
+
+# ============================================================
+# SETUP-SPECIFIC ANALYSIS ENGINE
+# ============================================================
+
+def explain_divergence(row, df, i2):
+    return f"""
+### Divergence Setup Analysis
+
+- Price made a **lower low**, but RSI & MACD showed **higher lows** → bullish divergence.
+- Divergence confirmed at index **{i2}** on **{row['Date']}**.
+- RSI at signal: **{row.get('RSI', 'N/A')}**.
+- Volume ratio: **{row.get('Vol_Ratio', 'N/A')}** (volume confirmation).
+- OFI: **{row.get('OFI', 'N/A')}** (order flow shift).
+- Entry: **{row['Entry']}**, SL: **{row['SL']}**, RR: **{row['R_R']}**.
+- Quality score: **{row.get('Quality', 'N/A')}**, Grade: **{row.get('Grade', 'N/A')}**.
+
+This is a **high‑probability reversal setup** with strong momentum shift.
+"""
+
+
+def explain_bb_squeeze(row, df, i2):
+    sq = "Yes" if row.get("In_Squeeze") else "No"
+    fire = "Yes" if row.get("Squeeze_Fire") else "No"
+
+    return f"""
+### BB Squeeze Setup Analysis
+
+- Bollinger Bands contracted **inside** Keltner Channels → volatility compression.
+- In Squeeze: **{sq}**, Squeeze Fire: **{fire}**.
+- Volume ratio: **{row.get('Vol_Ratio', 'N/A')}** → confirms expansion.
+- RSI: **{row.get('RSI', 'N/A')}**.
+- Entry: **{row['Entry']}**, SL: **{row['SL']}**, RR: **{row['R_R']}**.
+- Grade: **{row.get('Grade', 'N/A')}**.
+
+This is a **continuation breakout** after volatility contraction.
+"""
+
+
+def explain_breakout(row, df, i2):
+    return f"""
+### High Volume Breakout Analysis
+
+- Price broke above resistance at **{row.get('Breakout_Level', 'N/A')}**.
+- Volume ratio: **{row.get('Vol_Ratio', 'N/A')}** → strong institutional activity.
+- RSI: **{row.get('RSI', 'N/A')}**.
+- Entry: **{row['Entry']}**, SL: **{row['SL']}**, RR: **{row['R_R']}**.
+- Grade: **{row.get('Grade', 'N/A')}**.
+
+This is a **momentum breakout** with volume confirmation.
+"""
+
+
+def explain_pullback(row, df, i2):
+    return f"""
+### Trend Pullback (EMA21/50) Analysis
+
+- Price pulled back to **EMA21/50** and formed a bullish reversal candle.
+- Reversal candle: **{row.get('Reversal_Candle', True)}**.
+- EMA Touch: **{row.get('EMA_Touch', 'EMA21/50')}**.
+- Volume contraction on pullback, expansion on reversal.
+- Entry: **{row['Entry']}**, SL: **{row['SL']}**, RR: **{row['R_R']}**.
+- Grade: **{row.get('Grade', 'N/A')}**.
+
+This is a **trend continuation setup** with clean pullback structure.
+"""
+
+
+def explain_sweep(row, df, i2):
+    return f"""
+### Liquidity Sweep + Reversal Analysis
+
+- Price swept liquidity below **{row.get('Sweep_Level', 'N/A')}**.
+- Long lower wick → stop‑hunt behavior.
+- OFI: **{row.get('OFI', 'N/A')}** → order flow flipped positive.
+- Volume spike: **{row.get('Vol_Ratio', 'N/A')}**.
+- Entry: **{row['Entry']}**, SL: **{row['SL']}**, RR: **{row['R_R']}**.
+- Grade: **{row.get('Grade', 'N/A')}**.
+
+This is a **smart‑money reversal setup** with absorption.
+"""
+
+
+def explain_vcp(row, df, i2):
+    return f"""
+### VCP (Volatility Contraction Pattern) Analysis
+
+- Multiple contractions detected → volatility tightening.
+- Last contraction: **{row.get('Contraction_Pct', 'N/A')}%**.
+- Volume dry‑up: **{row.get('Vol_Dryup', True)}**.
+- Breakout above pivot with volume expansion.
+- Entry: **{row['Entry']}**, SL: **{row['SL']}**, RR: **{row['R_R']}**.
+- Grade: **{row.get('Grade', 'N/A')}**.
+
+This is a **high‑RR continuation setup** used by Minervini.
+"""
+
+
+def build_setup_analysis(setup_type, row, df, i2):
+    if setup_type == "Divergence":
+        return explain_divergence(row, df, i2)
+    if setup_type == "BB Squeeze":
+        return explain_bb_squeeze(row, df, i2)
+    if setup_type == "High Volume Breakout":
+        return explain_breakout(row, df, i2)
+    if setup_type == "Trend Pullback":
+        return explain_pullback(row, df, i2)
+    if setup_type == "Liquidity Sweep":
+        return explain_sweep(row, df, i2)
+    if setup_type == "VCP Pattern":
+        return explain_vcp(row, df, i2)
+    return "No analysis available for this setup."
+
+# ============================================================
+# SCREENER UI
+# ============================================================
 
 def show_screener():
     st.markdown('<div class="royal-card">', unsafe_allow_html=True)
-    st.markdown("### Divergence Screener (Live Data)")
+    st.markdown("### Divergence & Multi-Setup Screener (Live Data)")
+
+    if "selected_setup" not in st.session_state:
+        st.session_state["selected_setup"] = "Divergence"
+
+    cols_seg = st.columns(len(SETUP_TYPES))
+    for i, setup in enumerate(SETUP_TYPES):
+        if cols_seg[i].button(setup, key=f"setup_{setup}"):
+            st.session_state["selected_setup"] = setup
+
+    active_setup = st.session_state["selected_setup"]
+    seg_html = '<div class="setup-segment">'
+    for setup in SETUP_TYPES:
+        cls = "active" if setup == active_setup else ""
+        seg_html += f'<button class="{cls}">{setup}</button>'
+    seg_html += "</div>"
+    st.markdown(seg_html, unsafe_allow_html=True)
+
+    st.caption(f"Current setup: **{active_setup}** · Only this setup will be scanned.")
 
     c1, c2, c3, c4 = st.columns(4)
     universe = c1.selectbox("Universe", ["NIFTY50", "NIFTY200", "Custom"], index=1)
     interval = c2.selectbox("Timeframe", ["1d", "1h", "15m", "1wk"])
-    swing_bars = c3.slider("Swing Bars", 3, 10, 5)
-    min_q = c4.slider("Min Quality", 0, 100, 50)
+    swing_bars = c3.slider("Swing Bars (for swing-based setups)", 3, 10, 5)
+    min_q = c4.slider("Min Quality (where applicable)", 0, 100, 50)
 
     c5, c6, c7 = st.columns(3)
     use_trend = c5.toggle("Weekly Trend Filter", value=True)
     fresh_only = c6.toggle("Fresh Signals Only", value=True)
-    sq_only = c7.toggle("Squeeze Signals Only", value=False)
+    sq_only = c7.toggle("Squeeze Signals Only (BB)", value=True)
 
     if universe == "NIFTY50":
         tickers = NIFTY50
@@ -1328,8 +1223,8 @@ def show_screener():
             if x.strip()
         ]
 
-    total_capital = st.session_state["total_capital"]
-    risk_pct = st.session_state["risk_pct"]
+    total_capital = st.session_state.get("total_capital", 100000.0)
+    risk_pct = st.session_state.get("risk_pct", 1.0)
 
     st.caption(
         f"Position sizing uses total capital = INR {total_capital:,.0f} and risk = {risk_pct:.2f}% per trade."
@@ -1340,24 +1235,66 @@ def show_screener():
 
     if run:
         results = []
-        prog = st.progress(0, text="Scanning universe...")
+        prog = st.progress(0, text=f"Scanning universe for {active_setup} setups...")
         total = len(tickers)
         for idx, t in enumerate(tickers):
-            r = scan_stock(t, interval, use_trend, fresh_only, swing_bars, min_q, total_capital, risk_pct)
+            if active_setup == "Divergence":
+                r = scan_stock_divergence(
+                    t, interval, use_trend, fresh_only,
+                    swing_bars, min_q, total_capital, risk_pct
+                )
+            elif active_setup == "BB Squeeze":
+                r = scan_stock_bb_squeeze(
+                    t, interval, use_trend, fresh_only,
+                    swing_bars, min_q, total_capital, risk_pct,
+                    sq_only=sq_only
+                )
+            elif active_setup == "High Volume Breakout":
+                r = scan_stock_breakout(
+                    t, interval, use_trend, fresh_only,
+                    swing_bars, min_q, total_capital, risk_pct
+                )
+            elif active_setup == "Trend Pullback":
+                r = scan_stock_pullback(
+                    t, interval, use_trend, fresh_only,
+                    swing_bars, min_q, total_capital, risk_pct
+                )
+            elif active_setup == "Liquidity Sweep":
+                r = scan_stock_sweep(
+                    t, interval, use_trend, fresh_only,
+                    swing_bars, min_q, total_capital, risk_pct
+                )
+            elif active_setup == "VCP Pattern":
+                r = scan_stock_vcp(
+                    t, interval, use_trend, fresh_only,
+                    swing_bars, min_q, total_capital, risk_pct
+                )
+            else:
+                r = None
+
             if r:
-                if sq_only and not r["Squeeze_Fire"] and not r["In_Squeeze"]:
-                    pass
-                else:
-                    results.append(r)
+                results.append(r)
             prog.progress((idx + 1) / total, text=f"Scanning {t}")
         prog.empty()
+
         if results:
-            df_res = pd.DataFrame(results).sort_values(["Grade", "Quality"], ascending=[False, False])
+            df_res = pd.DataFrame(results)
+            df_res = df_res.replace([np.inf, -np.inf], np.nan).dropna(how="all")
+
+            desired_cols = get_screener_columns_for_setup(active_setup)
+            cols_present = [c for c in desired_cols if c in df_res.columns]
+            if cols_present:
+                df_res = df_res[cols_present]
+
+            sort_cols = [c for c in ["Grade", "Quality"] if c in df_res.columns]
+            if sort_cols:
+                df_res = df_res.sort_values(sort_cols, ascending=[False] * len(sort_cols))
+
             st.session_state["sr"] = df_res
-            st.success(f"Found {len(results)} setups")
+            st.success(f"Found {len(df_res)} setups for {active_setup}")
         else:
             st.session_state.pop("sr", None)
-            st.info("No qualifying setups found with current filters.")
+            st.info(f"No qualifying {active_setup} setups found with current filters.")
 
     if "sr" in st.session_state:
         df_res = st.session_state["sr"]
@@ -1368,184 +1305,41 @@ def show_screener():
 
         st.markdown('<div class="royal-card">', unsafe_allow_html=True)
         st.markdown("### Stock Analysis")
-        tickers_list = df_res["Ticker"].tolist()
-        selected = st.selectbox("Select a stock for detailed analysis", tickers_list)
-        row = df_res[df_res["Ticker"] == selected].iloc[0]
 
-        df_full = compute_indicators(load_data(selected, interval))
-        bull, _ = compute_divergences(df_full, bars=swing_bars)
-        i2 = int(row["i2"])
-        q = signal_quality(df_full, i2)
-        rr = row["R_R"]
-        vr = row["Vol_Ratio"]
-        ofi = row["OFI"]
-        squeeze_fire = row["Squeeze_Fire"]
-        in_squeeze = row["In_Squeeze"]
+        if "Ticker" in df_res.columns:
+            tickers_list = df_res["Ticker"].tolist()
+        elif "Symbol" in df_res.columns:
+            tickers_list = df_res["Symbol"].tolist()
+        else:
+            tickers_list = []
 
-        analysis_text = build_analysis_text(
-            selected, df_full, i2, q, rr, vr, ofi, squeeze_fire, in_squeeze
-        )
+        if tickers_list:
+            selected = st.selectbox("Select a stock for detailed analysis", tickers_list)
+            if "Ticker" in df_res.columns:
+                row = df_res[df_res["Ticker"] == selected].iloc[0]
+                ticker_for_analysis = row["Ticker"]
+            else:
+                row = df_res[df_res["Symbol"] == selected].iloc[0]
+                ticker_for_analysis = row["Symbol"]
 
-        st.markdown(f"**Why this stock is on the radar ({row['Symbol']} / {selected}):**")
-        st.markdown(analysis_text)
+            df_full = compute_indicators(load_data(ticker_for_analysis, interval))
+
+            if "i2" in row:
+                i2 = int(row["i2"])
+            else:
+                i2 = len(df_full) - 1
+
+            analysis_text = build_setup_analysis(
+                active_setup, row, df_full, i2
+            )
+
+            st.markdown(
+                f"**Why this stock is on the radar ({row.get('Symbol', ticker_for_analysis)} / {ticker_for_analysis}):**"
+            )
+            st.markdown(analysis_text)
+        else:
+            st.info("No rows available for analysis.")
         st.markdown("</div>", unsafe_allow_html=True)
-
-def show_chart():
-    st.markdown('<div class="royal-card">', unsafe_allow_html=True)
-    st.markdown("### Chart & Analysis")
-    c1, c2, c3 = st.columns(3)
-    ticker = c1.text_input("Ticker", "HAL.NS")
-    interval = c2.selectbox("Timeframe", ["1d", "1h", "15m", "1wk"])
-    swing_bars = c3.slider("Swing Bars", 3, 10, 5)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.sidebar.markdown(
-        """
-        <div class="royal-sidebar-header">
-            <div class="royal-title" style="font-size:16px;">CHART LAYERS</div>
-            <div class="royal-subtitle">AVWAP · VOLUME PROFILE · LIQUIDITY</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    with st.sidebar.expander("AVWAP Layers", True):
-        show_top = st.checkbox("Major Top AVWAP", True)
-        show_bottom = st.checkbox("Major Bottom AVWAP", True)
-        show_rtop = st.checkbox("Recent Top AVWAP", False)
-        show_rbot = st.checkbox("Recent Bottom AVWAP", False)
-
-    with st.sidebar.expander("Volume Profile", True):
-        show_vp = st.checkbox("Fixed Range VP", True)
-        show_vp_session = st.checkbox("Session Volume Profile", False)
-        show_hvn_lvn = st.checkbox("HVN / LVN Nodes", False)
-
-    with st.sidebar.expander("Liquidity Zones", True):
-        show_liq = st.checkbox("Liquidity Zones", True)
-        show_eqh_eql = st.checkbox("EQH / EQL", True)
-        show_pools = st.checkbox("Liquidity Pools", True)
-
-    if st.button("Load Chart (Live)"):
-        df_raw = load_data(ticker, interval)
-        if df_raw.empty:
-            st.warning("No data for this ticker/timeframe.")
-            return
-        df_f = compute_indicators(df_raw)
-        bd, brd = compute_divergences(df_f, bars=swing_bars)
-        st.plotly_chart(
-            plot_chart(
-                df_f,
-                bd,
-                brd,
-                ticker,
-                show_top,
-                show_bottom,
-                show_rtop,
-                show_rbot,
-                show_vp,
-                show_vp_session,
-                show_hvn_lvn,
-                show_liq,
-                show_eqh_eql,
-                show_pools,
-            ),
-            use_container_width=True,
-        )
-
-def show_backtest():
-    st.markdown('<div class="royal-card">', unsafe_allow_html=True)
-    st.markdown("### Backtest Engine (Solid, Risk in % of Capital)")
-    total_capital = st.session_state["total_capital"]
-    risk_pct = st.session_state["risk_pct"]
-
-    with st.form("backtest_form"):
-        c1, c2, c3 = st.columns(3)
-        bt_tick = c1.text_input("Ticker", "HAL.NS")
-        bt_tf = c2.selectbox("Timeframe", ["1d", "1h", "15m", "1wk"])
-        bt_years = c3.slider("Years", 1, 5, 2)
-        st.caption(
-            f"Using total capital = INR {total_capital:,.0f}, risk per trade = {risk_pct:.2f}% (INR {total_capital * risk_pct / 100:,.0f})."
-        )
-        run_bt = st.form_submit_button("Run Backtest (Live)")
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    if run_bt:
-        df_bt_raw = load_data(bt_tick, bt_tf, years=bt_years)
-        if df_bt_raw.empty:
-            st.warning("No data for this ticker/timeframe.")
-            return
-        df_bt = compute_indicators(df_bt_raw)
-        bd, brd = compute_divergences(df_bt, bars=5)
-        dft, stats = run_backtest(df_bt, bd, total_capital, risk_pct, None, False)
-        if dft.empty:
-            st.info("No trades generated with current logic.")
-            return
-
-        st.markdown('<div class="royal-card">', unsafe_allow_html=True)
-        st.markdown("### Performance Summary")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Win Rate", f"{stats['Win_Rate']}%")
-        c2.metric("Profit Factor", stats["Profit_Factor"])
-        c3.metric("Max Drawdown", f"{stats['Max_DD']}%")
-        c4.metric("Total Return", f"{stats['Total_Return']}%")
-        c5, c6, c7, c8 = st.columns(4)
-        c5.metric("Sharpe", stats["Sharpe"])
-        c6.metric("Sortino", stats["Sortino"])
-        c7.metric("Calmar", stats["Calmar"])
-        c8.metric("Kelly %", stats["Kelly"])
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        st.markdown('<div class="royal-card">', unsafe_allow_html=True)
-        st.plotly_chart(plot_equity(stats["Equity"]), use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        st.markdown('<div class="royal-card">', unsafe_allow_html=True)
-        st.markdown("### Trade Log")
-        st.dataframe(dft, use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-def show_autotrade():
-    get_autotrade_state()
-    st.markdown('<div class="royal-card">', unsafe_allow_html=True)
-    st.markdown("### Auto Trade (Paper Mode Stub)")
-    mode = st.radio("Mode", ["Paper"], horizontal=True)
-    st.session_state["at_mode"] = mode.lower()
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Toggle Engine"):
-            st.session_state["at_active"] = not st.session_state["at_active"]
-    with col2:
-        st.metric("Total PnL (Paper)", f"INR {st.session_state['at_pnl']:.0f}")
-    st.write("Open Positions")
-    if st.session_state["at_pos"]:
-        st.dataframe(pd.DataFrame(st.session_state["at_pos"]).T)
-    else:
-        st.write("No open positions.")
-    st.write("Event Log")
-    if st.session_state["at_log"]:
-        for line in st.session_state["at_log"][-20:]:
-            st.write(line)
-    else:
-        st.write("No events yet.")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-def show_settings():
-    st.markdown('<div class="royal-card">', unsafe_allow_html=True)
-    st.markdown("### Settings")
-
-    c1, c2 = st.columns(2)
-    with c1:
-        theme = st.radio("Theme", ["Dark", "Light"], index=0 if st.session_state["theme"] == "Dark" else 1)
-        st.session_state["theme"] = theme
-    with c2:
-        total_capital = st.number_input("Total Trading Capital (INR)", min_value=10000.0, value=float(st.session_state["total_capital"]), step=10000.0)
-        risk_pct = st.number_input("Risk per Trade (%)", min_value=0.1, max_value=5.0, value=float(st.session_state["risk_pct"]), step=0.1)
-        st.session_state["total_capital"] = total_capital
-        st.session_state["risk_pct"] = risk_pct
-
-    st.caption("Risk is applied as a percentage of total capital for both screener position sizing and backtests.")
-    st.markdown("</div>", unsafe_allow_html=True)
 
 # ============================================================
 # MAIN
@@ -1553,39 +1347,27 @@ def show_settings():
 
 def main():
     apply_theme()
-    get_autotrade_state()
+    st.set_page_config(page_title="Sniper Terminal v3", layout="wide")
+    st.title("Sniper Terminal v3 — Multi-Setup Screener")
 
     with st.sidebar:
-        st.markdown(
-            """
-            <div class="royal-sidebar-header">
-                <div style="font-size:18px; font-weight:800; color:var(--gold); letter-spacing:0.18em; text-transform:uppercase;">
-                    ◆ Sniper Terminal v2 ◆
-                </div>
-                <div class="royal-subtitle">Royal Institutional Edition</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown("### Risk & Capital")
+        total_capital = st.number_input("Total Capital (INR)", min_value=10000.0, value=100000.0, step=5000.0)
+        risk_pct = st.slider("Risk % per Trade", 0.1, 5.0, 1.0, 0.1)
+        st.session_state["total_capital"] = total_capital
+        st.session_state["risk_pct"] = risk_pct
 
-        menu = st.radio(
-            "Navigation",
-            ["Dashboard", "Screener", "Chart", "Backtest", "Auto Trade", "Settings"],
-            index=0,
-        )
+    show_screener()
 
-    if menu == "Dashboard":
-        show_dashboard()
-    elif menu == "Screener":
-        show_screener()
-    elif menu == "Chart":
-        show_chart()
-    elif menu == "Backtest":
-        show_backtest()
-    elif menu == "Auto Trade":
-        show_autotrade()
-    elif menu == "Settings":
-        show_settings()
+
+if __name__ == "__main__":
+    main()
+```", 0.1, 5.0, 1.0, 0.1)
+        st.session_state["total_capital"] = total_capital
+        st.session_state["risk_pct"] = risk_pct
+
+    show_screener()
+
 
 if __name__ == "__main__":
     main()
