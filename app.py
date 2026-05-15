@@ -1369,7 +1369,14 @@ def main():
 
 if __name__ == "__main__":
     main()
-```", 0.1, 5.0, 1.0, 0.1)
+risk_pct = st.slider(
+    "Risk % per Trade",
+    min_value=0.1,
+    max_value=5.0,
+    value=1.0,
+    step=0.1
+)
+
         st.session_state["total_capital"] = total_capital
         st.session_state["risk_pct"] = risk_pct
 
