@@ -59,6 +59,9 @@ def load_data(ticker: str, interval: str = "1d", years: int = 3) -> pd.DataFrame
             )
             if df is not None and not df.empty:
                 df = df.dropna()
+                # Ensure standard columns
+                if "Volume" not in df.columns:
+                    df["Volume"] = 0
                 return df
         except Exception:
             time.sleep(1)
@@ -133,7 +136,8 @@ def compute_indicators(df: pd.DataFrame, swing_bars: int = 5) -> pd.DataFrame:
 
     # Volume metrics
     df["Vol_MA20"] = df["Volume"].rolling(20).mean()
-    df["Vol_Ratio"] = (df["Volume"] / df["Vol_MA20"].replace(0, np.nan)).fillna(0)
+    vol_ratio = df["Volume"] / df["Vol_MA20"].replace(0, np.nan)
+    df["Vol_Ratio"] = pd.to_numeric(vol_ratio, errors="coerce").fillna(0.0)
 
     # Order flow
     df["OFI"] = compute_ofi(df)
@@ -1111,6 +1115,7 @@ def run_setup_scan(
     return None
 
 
+@st.cache_data(show_spinner=False)
 def run_screener(
     setup_type: str,
     universe: list,
@@ -1125,7 +1130,7 @@ def run_screener(
     rows = []
     for ticker in universe:
         try:
-            sig = run_setup_scan(
+            row = run_setup_scan(
                 setup_type,
                 ticker,
                 interval,
@@ -1136,8 +1141,8 @@ def run_screener(
                 total_capital,
                 risk_pct,
             )
-            if sig:
-                rows.append(sig)
+            if row:
+                rows.append(row)
         except Exception:
             continue
 
@@ -1145,140 +1150,51 @@ def run_screener(
         return pd.DataFrame()
 
     df = pd.DataFrame(rows)
-    sort_col = "Quality" if "Quality" in df.columns else "Grade"
-    df = df.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
+    df.sort_values(["Grade", "R_R", "Date"], ascending=[True, False, False], inplace=True)
+    df.reset_index(drop=True, inplace=True)
     return df
 
 
 # ============================================================
-# BACKTEST ENGINE
+# PLOTTING & VOLUME PROFILE
 # ============================================================
 
-def simulate_trade(entry, sl, tp1, tp2, df_slice):
-    for i in range(len(df_slice)):
-        low = df_slice["Low"].iloc[i]
-        high = df_slice["High"].iloc[i]
-
-        if low <= sl:
-            return "SL", sl, (sl - entry)
-
-        if high >= tp1:
-            if high >= tp2:
-                return "TP2", tp2, (tp2 - entry)
-            return "TP1", tp1, (tp1 - entry)
-
-    last_close = df_slice["Close"].iloc[-1]
-    return "EXIT", last_close, (last_close - entry)
-
-
-def backtest_setup(df, signals, risk_pct, total_capital):
-    trades = []
-    capital = total_capital
-
-    for sig in signals:
-        i2 = sig["i2"]
-        if i2 + 1 >= len(df):
-            continue
-
-        entry = sig["Entry"]
-        sl = sig["SL"]
-        tp1 = sig["TP1"]
-        tp2 = sig["TP2"]
-
-        df_slice = df.iloc[i2 + 1 : i2 + 40]
-        if df_slice.empty:
-            continue
-
-        outcome, exit_price, pnl = simulate_trade(entry, sl, tp1, tp2, df_slice)
-
-        risk_amount = capital * risk_pct / 100.0
-        sl_dist = max(abs(entry - sl), 0.01)
-        qty = max(int(risk_amount / sl_dist), 1)
-
-        profit = qty * pnl
-        capital += profit
-
-        trades.append({
-            "Date": sig["Date"],
-            "Entry": entry,
-            "Exit": exit_price,
-            "Outcome": outcome,
-            "PnL": round(profit, 2),
-            "Capital": round(capital, 2),
-            "R_Multiple": round(pnl / sl_dist, 2),
-        })
-
-    return pd.DataFrame(trades)
-
-
-def autotrade_signal_executor(df, sig, risk_pct, total_capital):
-    i2 = sig["i2"]
-    if i2 + 1 >= len(df):
-        return {"status": "no_data"}
-
-    entry = sig["Entry"]
-    sl = sig["SL"]
-    tp1 = sig["TP1"]
-    tp2 = sig["TP2"]
-
-    df_slice = df.iloc[i2 + 1 : i2 + 40]
-    if df_slice.empty:
-        return {"status": "no_data"}
-
-    outcome, exit_price, pnl = simulate_trade(entry, sl, tp1, tp2, df_slice)
-
-    risk_amount = total_capital * risk_pct / 100.0
-    sl_dist = max(abs(entry - sl), 0.01)
-    qty = max(int(risk_amount / sl_dist), 1)
-    profit = qty * pnl
-
-    return {
-        "status": "executed",
-        "Outcome": outcome,
-        "Entry": entry,
-        "Exit": exit_price,
-        "Qty": qty,
-        "PnL": round(profit, 2),
-    }
-
-
-# ============================================================
-# VOLUME PROFILE ENGINE
-# ============================================================
-
-def compute_volume_profile(df: pd.DataFrame, bins: int = 40):
+def volume_profile(df: pd.DataFrame, bins: int = 40):
     if df is None or df.empty:
-        return np.array([]), np.array([]), None
+        return np.array([]), np.array([]), None, None, None
 
     prices = df["Close"].astype(float)
     vols = df["Volume"].astype(float)
 
     if prices.isna().all() or vols.isna().all():
-        return np.array([]), np.array([]), None
+        return np.array([]), np.array([]), None, None, None
 
-    try:
-        hist, bin_edges = np.histogram(prices, bins=bins, weights=vols)
-    except ValueError:
-        return np.array([]), np.array([]), None
+    hist, bin_edges = np.histogram(prices, bins=bins, weights=vols)
+    centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
     if hist.max() <= 0:
-        return bin_edges, hist, None
+        return centers, hist, None, None, None
 
     poc_idx = np.argmax(hist)
-    poc_price = (bin_edges[poc_idx] + bin_edges[poc_idx + 1]) / 2.0
-    return bin_edges, hist, poc_price
+    poc = centers[poc_idx]
+
+    cum = np.cumsum(hist) / hist.sum()
+    val_idx = np.searchsorted(cum, 0.7)
+    val = centers[max(min(val_idx, len(centers) - 1), 0)]
+    vah = centers[-1]
+
+    return centers, hist, poc, val, vah
 
 
-# ============================================================
-# CHART ENGINE
-# ============================================================
-
-def plot_chart(df, ticker=None):
+def plot_chart(df: pd.DataFrame, ticker: str, show_vp: bool = True):
     if df is None or df.empty:
-        return go.Figure()
+        fig = go.Figure()
+        fig.update_layout(title=f"{ticker} — No data")
+        return fig
 
     fig = make_subplots(
-        rows=2, cols=1,
+        rows=2,
+        cols=1,
         shared_xaxes=True,
         row_heights=[0.7, 0.3],
         vertical_spacing=0.03,
@@ -1294,14 +1210,16 @@ def plot_chart(df, ticker=None):
             close=df["Close"],
             name="Price",
         ),
-        row=1, col=1
+        row=1,
+        col=1,
     )
 
-    # EMAs
-    for col, color in [
-        ("EMA21", "cyan"),
-        ("EMA50", "orange"),
-        ("EMA200", "yellow"),
+    # EMAs & AVWAP
+    for col, name, color in [
+        ("EMA21", "EMA21", "cyan"),
+        ("EMA50", "EMA50", "orange"),
+        ("EMA200", "EMA200", "yellow"),
+        ("AVWAP", "AVWAP", "magenta"),
     ]:
         if col in df.columns:
             fig.add_trace(
@@ -1309,24 +1227,12 @@ def plot_chart(df, ticker=None):
                     x=df.index,
                     y=df[col],
                     mode="lines",
-                    name=col,
-                    line=dict(color=color, width=1),
+                    name=name,
+                    line=dict(width=1, color=color),
                 ),
-                row=1, col=1
+                row=1,
+                col=1,
             )
-
-    # AVWAP
-    if "AVWAP" in df.columns:
-        fig.add_trace(
-            go.Scatter(
-                x=df.index,
-                y=df["AVWAP"],
-                mode="lines",
-                name="AVWAP",
-                line=dict(color="magenta", width=1),
-            ),
-            row=1, col=1
-        )
 
     # Divergence markers
     if "Bull_Div" in df.columns:
@@ -1336,12 +1242,12 @@ def plot_chart(df, ticker=None):
                 x=bull_idx,
                 y=df.loc[bull_idx, "Low"],
                 mode="markers",
-                marker=dict(color="lime", size=10, symbol="triangle-up"),
                 name="Bull Div",
+                marker=dict(color="lime", size=8, symbol="triangle-up"),
             ),
-            row=1, col=1
+            row=1,
+            col=1,
         )
-
     if "Bear_Div" in df.columns:
         bear_idx = df.index[df["Bear_Div"]]
         fig.add_trace(
@@ -1349,10 +1255,11 @@ def plot_chart(df, ticker=None):
                 x=bear_idx,
                 y=df.loc[bear_idx, "High"],
                 mode="markers",
-                marker=dict(color="red", size=10, symbol="triangle-down"),
                 name="Bear Div",
+                marker=dict(color="red", size=8, symbol="triangle-down"),
             ),
-            row=1, col=1
+            row=1,
+            col=1,
         )
 
     # Volume
@@ -1361,34 +1268,270 @@ def plot_chart(df, ticker=None):
             x=df.index,
             y=df["Volume"],
             name="Volume",
-            marker_color="rgba(100,149,237,0.7)",
+            marker_color="steelblue",
         ),
-        row=2, col=1
+        row=2,
+        col=1,
     )
 
-    # RSI
-    if "RSI" in df.columns:
-        fig.add_trace(
-            go.Scatter(
-                x=df.index,
-                y=df["RSI"],
-                mode="lines",
-                name="RSI",
-                line=dict(color="white", width=1),
-            ),
-            row=2, col=1
-        )
+    # Volume profile (optional)
+    if show_vp:
+        centers, hist, poc, _, _ = volume_profile(df)
+        if hist.size > 0 and hist.max() > 0:
+            hist_scaled = hist / hist.max() * (df["High"].max() - df["Low"].min()) * 0.3
+            fig.add_trace(
+                go.Bar(
+                    x=[df.index[-1]] * len(centers),
+                    y=centers,
+                    orientation="h",
+                    width=hist_scaled,
+                    name="Vol Profile",
+                    marker_color="gray",
+                    opacity=0.3,
+                ),
+                row=1,
+                col=1,
+            )
+            if poc is not None:
+                fig.add_hline(
+                    y=poc,
+                    line=dict(color="white", width=1, dash="dot"),
+                    annotation_text="POC",
+                    row=1,
+                    col=1,
+                )
 
-    title = f"{ticker}" if ticker else "Chart"
     fig.update_layout(
         template=st.session_state.get("plot_theme", "plotly_dark"),
-        height=700,
-        margin=dict(l=10, r=10, t=30, b=20),
+        title=f"{ticker} — Sniper Terminal v4",
         xaxis_rangeslider_visible=False,
-        title=title,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
 
     return fig
+
+
+def compute_volume_profile(df: pd.DataFrame, bins: int = 40):
+    centers, hist, poc, val, vah = volume_profile(df, bins=bins)
+    return centers, hist, poc
+
+
+# ============================================================
+# BACKTEST ENGINE
+# ============================================================
+
+def generate_signals_for_backtest(
+    df: pd.DataFrame,
+    ticker: str,
+    setup_type: str,
+    total_capital: float,
+    risk_pct: float,
+) -> list:
+    signals = []
+    if df is None or df.empty:
+        return signals
+
+    for i2 in range(30, len(df) - 2):
+        atr = float(df["ATR"].iloc[i2])
+        if atr <= 0:
+            continue
+
+        ei = i2 + 1
+        ep = float(df["Open"].iloc[ei])
+
+        q = signal_quality(df, i2)
+        if q["total"] < 40:
+            continue
+
+        if setup_type == "Divergence":
+            if not (df["Bull_Div"].iloc[i2] or df["Bear_Div"].iloc[i2]):
+                continue
+            if df["Bull_Div"].iloc[i2]:
+                sl = round(float(df["Low"].iloc[i2]) - 0.5 * atr, 2)
+                tp1 = round(ep + 2.0 * atr, 2)
+            else:
+                sl = round(float(df["High"].iloc[i2]) + 0.5 * atr, 2)
+                tp1 = round(ep - 2.0 * atr, 2)
+            tp2 = tp1
+        elif setup_type == "BB Squeeze":
+            if not bool(df["Squeeze_Fire"].iloc[i2]):
+                continue
+            sl = round(float(df["Low"].iloc[i2]) - 0.5 * atr, 2)
+            tp1 = round(ep + 2.0 * atr, 2)
+            tp2 = round(ep + 4.0 * atr, 2)
+        elif setup_type == "High Volume Breakout":
+            # reuse breakout logic roughly
+            vol = df["Volume"]
+            vol_ma20 = vol.rolling(20).mean()
+            if vol_ma20.iloc[i2] <= 0:
+                continue
+            if vol.iloc[i2] / vol_ma20.iloc[i2] < 2.0:
+                continue
+            sl = round(float(df["Close"].iloc[i2]) - 1.0 * atr, 2)
+            tp1 = round(ep + 2.0 * atr, 2)
+            tp2 = round(ep + 4.0 * atr, 2)
+        elif setup_type == "Trend Pullback":
+            ema21 = float(df["EMA21"].iloc[i2])
+            ema50 = float(df["EMA50"].iloc[i2])
+            ema200 = float(df["EMA200"].iloc[i2])
+            close_i2 = float(df["Close"].iloc[i2])
+            if not (close_i2 > ema21 and close_i2 > ema50 and close_i2 > ema200):
+                continue
+            if not detect_reversal_candle(df, i2):
+                continue
+            sl = round(float(df["Low"].iloc[i2]) - 0.5 * atr, 2)
+            tp1 = round(ep + 2.0 * atr, 2)
+            tp2 = round(ep + 4.0 * atr, 2)
+        elif setup_type == "Liquidity Sweep":
+            if not is_stop_hunt_wick(df, i2, side="bull"):
+                continue
+            sl = round(float(df["Low"].iloc[i2]) - 0.3 * atr, 2)
+            tp1 = round(ep + 2.5 * atr, 2)
+            tp2 = round(ep + 5.0 * atr, 2)
+        elif setup_type == "VCP Pattern":
+            # simple: require Vol_Ratio > 1.5 and price above EMA200
+            if float(df["Vol_Ratio"].iloc[i2]) < 1.5:
+                continue
+            if float(df["Close"].iloc[i2]) < float(df["EMA200"].iloc[i2]):
+                continue
+            sl = round(float(df["Close"].iloc[i2]) - 1.0 * atr, 2)
+            tp1 = round(ep + 2.5 * atr, 2)
+            tp2 = round(ep + 5.0 * atr, 2)
+        else:
+            continue
+
+        rr = round((tp1 - ep) / max(abs(ep - sl), 0.01), 2)
+        risk_amount = total_capital * risk_pct / 100.0
+        sl_dist = max(abs(ep - sl), 0.01)
+        qty = max(int(risk_amount / sl_dist), 0)
+
+        signals.append(
+            {
+                "Symbol": ticker.replace(".NS", ""),
+                "Ticker": ticker,
+                "Date": str(df.index[i2])[:10],
+                "Entry": ep,
+                "SL": sl,
+                "TP1": tp1,
+                "TP2": tp2,
+                "R_R": rr,
+                "Grade": q["grade"],
+                "RSI": round(float(df["RSI"].iloc[i2]), 1),
+                "Vol_Ratio": round(float(df["Vol_Ratio"].iloc[i2]), 2),
+                "OFI": round(float(df["OFI"].iloc[i2]), 3),
+                "i2": i2,
+                "Position_Qty": qty,
+            }
+        )
+
+    return signals
+
+
+def backtest_setup(
+    df: pd.DataFrame,
+    signals: list,
+    risk_pct: float,
+    starting_capital: float,
+) -> pd.DataFrame:
+    if not signals:
+        return pd.DataFrame()
+
+    trades = []
+    capital = starting_capital
+
+    for sig in signals:
+        i2 = int(sig["i2"])
+        entry = float(sig["Entry"])
+        sl = float(sig["SL"])
+        tp1 = float(sig["TP1"])
+
+        risk_amount = capital * risk_pct / 100.0
+        sl_dist = max(abs(entry - sl), 0.01)
+        qty = risk_amount / sl_dist
+
+        outcome = 0.0
+        exit_price = entry
+        hit = "NONE"
+
+        for j in range(i2 + 1, min(i2 + 25, len(df))):
+            low = float(df["Low"].iloc[j])
+            high = float(df["High"].iloc[j])
+
+            if entry > sl:
+                # long
+                if low <= sl:
+                    exit_price = sl
+                    outcome = -risk_amount
+                    hit = "SL"
+                    break
+                if high >= tp1:
+                    exit_price = tp1
+                    outcome = risk_amount * 2.0
+                    hit = "TP"
+                    break
+            else:
+                # short (not really used here, but safe)
+                if high >= sl:
+                    exit_price = sl
+                    outcome = -risk_amount
+                    hit = "SL"
+                    break
+                if low <= tp1:
+                    exit_price = tp1
+                    outcome = risk_amount * 2.0
+                    hit = "TP"
+                    break
+
+        if hit == "NONE":
+            # exit at last bar close
+            j = min(i2 + 25, len(df) - 1)
+            exit_price = float(df["Close"].iloc[j])
+            pnl = (exit_price - entry) * qty
+            outcome = pnl
+
+        capital += outcome
+
+        trades.append(
+            {
+                "Date": sig["Date"],
+                "Ticker": sig["Ticker"],
+                "Entry": entry,
+                "Exit": round(exit_price, 2),
+                "Hit": hit,
+                "PnL": round(outcome, 2),
+                "Capital": round(capital, 2),
+                "R_R": sig["R_R"],
+                "Grade": sig["Grade"],
+            }
+        )
+
+    bt = pd.DataFrame(trades)
+    return bt
+
+
+def autotrade_signal_executor(
+    df: pd.DataFrame,
+    sig: dict,
+    risk_pct: float,
+    total_capital: float,
+):
+    entry = float(sig["Entry"])
+    sl = float(sig["SL"])
+    tp1 = float(sig["TP1"])
+    risk_amount = total_capital * risk_pct / 100.0
+    sl_dist = max(abs(entry - sl), 0.01)
+    qty = int(risk_amount / sl_dist)
+
+    return {
+        "Ticker": sig["Ticker"],
+        "Date": sig["Date"],
+        "Entry": entry,
+        "SL": sl,
+        "TP1": tp1,
+        "TP2": float(sig["TP2"]),
+        "Quantity": qty,
+        "RiskAmount": round(risk_amount, 2),
+    }
 
 
 # ============================================================
@@ -1451,16 +1594,6 @@ def page_screener():
 
     setup_type = setup_selector()
 
-    col0, col1, col2 = st.columns(3)
-    with col0:
-        universe_choice = st.selectbox("Universe", ["NIFTY50", "NIFTY200", "NIFTY500"])
-    if universe_choice == "NIFTY50":
-        universe = NIFTY50
-    elif universe_choice == "NIFTY200":
-        universe = NIFTY200
-    else:
-        universe = NIFTY500
-
     col1, col2, col3 = st.columns(3)
     with col1:
         interval = st.selectbox("Interval", ["1d", "1h", "15m"])
@@ -1479,7 +1612,32 @@ def page_screener():
 
     risk_pct = st.slider("Risk % per Trade", 0.1, 5.0, 1.0)
 
+    colu1, colu2 = st.columns(2)
+    with colu1:
+        universe_choice = st.selectbox(
+            "Universe",
+            ["NIFTY50", "NIFTY200", "NIFTY500", "Custom"],
+        )
+    with colu2:
+        custom_universe_str = st.text_area(
+            "Custom tickers (comma separated, .NS)",
+            value="RELIANCE.NS,TCS.NS,INFY.NS",
+        ) if universe_choice == "Custom" else ""
+
+    if universe_choice == "NIFTY50":
+        universe = [s + ".NS" for s in NIFTY50]
+    elif universe_choice == "NIFTY200":
+        universe = [s + ".NS" for s in NIFTY200]
+    elif universe_choice == "NIFTY500":
+        universe = [s + ".NS" for s in NIFTY500]
+    else:
+        universe = [x.strip() for x in custom_universe_str.split(",") if x.strip()]
+
     if st.button("Run Screener"):
+        if not universe:
+            st.warning("Universe is empty.")
+            return
+
         with st.spinner("Scanning market..."):
             df = run_screener(
                 setup_type,
@@ -1525,6 +1683,11 @@ def page_screener():
         elif setup_type == "VCP Pattern":
             st.markdown(explain_vcp(row, df_full, i2))
 
+        st.markdown("---")
+        st.subheader("Chart")
+        fig = plot_chart(df_full, ticker)
+        st.plotly_chart(fig, use_container_width=True)
+
 
 # ============================================================
 # CHART PAGE
@@ -1539,6 +1702,10 @@ def page_chart():
     if st.button("Load Chart"):
         df = load_data(ticker, interval)
         df = compute_indicators(df)
+
+        if df.empty:
+            st.warning("No data for this ticker/interval.")
+            return
 
         fig = plot_chart(df, ticker)
         st.plotly_chart(fig, use_container_width=True)
@@ -1562,28 +1729,23 @@ def page_backtest():
         df = load_data(ticker, interval)
         df = compute_indicators(df)
 
-        sig = run_setup_scan(
-            setup_type,
+        if df.empty:
+            st.warning("No data for backtest.")
+            return
+
+        signals = generate_signals_for_backtest(
+            df,
             ticker,
-            interval,
-            use_trend=False,
-            fresh_only=False,
-            swing_bars=5,
-            min_q=40,
-            total_capital=total_capital,
-            risk_pct=risk_pct,
+            setup_type,
+            total_capital,
+            risk_pct,
         )
 
-        if not sig:
+        if not signals:
             st.warning("No signals found for backtest.")
             return
 
-        signals = [sig]
         bt = backtest_setup(df, signals, risk_pct, total_capital)
-        if bt.empty:
-            st.warning("No trades generated.")
-            return
-
         st.dataframe(bt, use_container_width=True)
 
         st.subheader("Equity Curve")
@@ -1607,6 +1769,10 @@ def page_autotrade():
     if st.button("Execute Last Signal"):
         df = load_data(ticker, interval)
         df = compute_indicators(df)
+
+        if df.empty:
+            st.warning("No data.")
+            return
 
         sig = run_setup_scan(
             setup_type,
@@ -1640,14 +1806,21 @@ def page_volume_profile():
 
     if st.button("Compute Volume Profile"):
         df = load_data(ticker, interval)
-        edges, vol, poc = compute_volume_profile(df)
+        df = compute_indicators(df)
 
-        if poc is None or len(vol) == 0:
-            st.warning("Not enough data to compute volume profile.")
+        if df.empty:
+            st.warning("No data.")
             return
 
-        st.write("POC:", round(poc, 2))
-        st.bar_chart(vol)
+        centers, vol, poc = compute_volume_profile(df)
+
+        if vol.size == 0:
+            st.warning("Volume profile could not be computed.")
+            return
+
+        st.write("POC:", poc)
+        vp_df = pd.DataFrame({"Price": centers, "Volume": vol})
+        st.bar_chart(vp_df.set_index("Price"))
 
 
 # ============================================================
