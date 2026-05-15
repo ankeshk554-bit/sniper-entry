@@ -11,6 +11,11 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+# 👉 Add these right below your main imports
+from nifty50 import NIFTY50
+from nifty200 import NIFTY200
+from nifty500 import NIFTY500
+
 warnings.filterwarnings("ignore")
 
 # ============================================================
