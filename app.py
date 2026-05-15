@@ -1,5 +1,3 @@
-Here’s the optimized, ready‑to‑paste app.py with safer Volume Profile, cleaned logic, and minor performance tweaks:
-
 # ============================================================
 # SNIPER TERMINAL v2.0 - ANKESH (Optimized)
 # ============================================================
