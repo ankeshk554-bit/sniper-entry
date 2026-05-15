@@ -1,15 +1,15 @@
 # ============================================================
-# SNIPER TERMINAL v2.0 - ANKESH (Optimized)
+# SNIPER TERMINAL v2.0 - ROYAL GOLD (Champagne) EDITION
 # ============================================================
 
-import numpy as np
-import pandas as pd
-import streamlit as st
-import yfinance as yf
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import time
 import warnings
+import numpy as np
+import pandas as pd
+import yfinance as yf
+import streamlit as st
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 warnings.filterwarnings("ignore")
 
@@ -59,66 +59,141 @@ NIFTY50 = [
 # ============================================================
 
 st.set_page_config(
-    page_title="Sniper Terminal v2 - Ankesh",
+    page_title="Sniper Terminal v2 - Royal Gold",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@700;800&display=swap');
+if "theme" not in st.session_state:
+    st.session_state["theme"] = "Dark"
 
-body, .stApp { background: #07090f !important; color:#c9d1d9 !important; }
-.stApp { font-family: 'JetBrains Mono', monospace !important; }
+# ============================================================
+# THEME ENGINE (DARK / LIGHT, ROYAL GOLD - CHAMPAGNE)
+# ============================================================
 
-#MainMenu, footer, header { visibility: hidden; }
+def apply_theme():
+    theme = st.session_state.get("theme", "Dark")
 
-.stTabs [data-baseweb="tab-list"] {
-    background: #0d1117;
-    border-bottom: 1px solid #21262d;
-}
-.stTabs [data-baseweb="tab"] {
-    font-family: 'JetBrains Mono', monospace;
-    color: #8b949e;
-    font-size: 12px;
-    font-weight: 600;
-}
-.stTabs [aria-selected="true"] {
-    color: #58a6ff !important;
-    border-bottom: 2px solid #58a6ff !important;
-}
+    if theme == "Dark":
+        bg = "#050608"
+        fg = "#f5f5f5"
+        card = "#0b0d11"
+        border = "#2b2f36"
+        gold = "#f7e7ce"  # Champagne gold
+        gold_soft = "#c9b79a"
+        plot_theme = "plotly_dark"
+    else:
+        bg = "#f5f5f7"
+        fg = "#111111"
+        card = "#ffffff"
+        border = "#d0d0d5"
+        gold = "#c9a96a"
+        gold_soft = "#b09055"
+        plot_theme = "plotly_white"
 
-.stButton > button {
-    background: linear-gradient(135deg, #238636, #2ea043) !important;
-    color: white !important;
-    border: none !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-weight: 700 !important;
-    letter-spacing: 1px !important;
-    border-radius: 6px !important;
-    padding: 9px 24px !important;
-    transition: all .2s !important;
-}
-.stButton > button:hover {
-    filter: brightness(1.15) !important;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 16px rgba(35,134,54,.4) !important;
-}
+    st.session_state["plot_theme"] = plot_theme
+    st.session_state["gold"] = gold
 
-.stTextInput > div > div > input, .stNumberInput > div > div > input {
-    background: #0d1117 !important;
-    border: 1px solid #30363d !important;
-    color: #e6edf3 !important;
-    border-radius: 6px !important;
-    font-family: 'JetBrains Mono', monospace !important;
-}
-.stSelectbox > div > div { background:#0d1117 !important; border: 1px solid #30363d !important; }
-.stDataFrame { border: 1px solid #21262d !important; border-radius: 8px !important; }
+    st.markdown(
+        f"""
+        <style>
+        :root {{
+            --bg: {bg};
+            --fg: {fg};
+            --card: {card};
+            --border: {border};
+            --gold: {gold};
+            --gold-soft: {gold_soft};
+        }}
 
-[data-testid="metric-container"] { background: #0d1117; border: 1px solid #21262d; border-radius: 8px; }
-[data-testid="stMetricValue"] { font-family: "JetBrains Mono", monospace; font-size: 20px; }
-</style>
-""", unsafe_allow_html=True)
+        body, .stApp {{
+            background: var(--bg) !important;
+            color: var(--fg) !important;
+        }}
+
+        .royal-card {{
+            background: var(--card);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            padding: 16px 18px;
+            margin-bottom: 12px;
+            box-shadow: 0 0 18px rgba(0,0,0,0.35);
+        }}
+
+        .royal-metric {{
+            background: linear-gradient(135deg, rgba(247,231,206,0.08), rgba(247,231,206,0.02));
+            border-radius: 10px;
+            border: 1px solid rgba(247,231,206,0.35);
+            padding: 10px 14px;
+            margin-bottom: 10px;
+        }}
+
+        .royal-title {{
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--gold);
+        }}
+
+        .royal-subtitle {{
+            font-size: 11px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: rgba(247,231,206,0.75);
+        }}
+
+        .royal-sidebar-header {{
+            padding: 14px 10px 10px 10px;
+            border-bottom: 1px solid rgba(247,231,206,0.25);
+            margin-bottom: 8px;
+        }}
+
+        .royal-nav-label {{
+            font-size: 12px !important;
+            font-weight: 600 !important;
+            letter-spacing: 0.08em !important;
+            text-transform: uppercase !important;
+        }}
+
+        [data-testid="stSidebar"] {{
+            background: radial-gradient(circle at top, #151821 0, #050608 55%);
+            border-right: 1px solid rgba(247,231,206,0.25);
+        }}
+
+        .stRadio > div > label {{
+            color: var(--fg) !important;
+        }}
+
+        .stButton > button {{
+            background: linear-gradient(135deg, var(--gold), var(--gold-soft)) !important;
+            color: #111 !important;
+            border: none !important;
+            font-weight: 700 !important;
+            border-radius: 8px !important;
+            padding: 8px 20px !important;
+        }}
+
+        .stButton > button:hover {{
+            filter: brightness(1.08) !important;
+            box-shadow: 0 0 18px rgba(247,231,206,0.45) !important;
+        }}
+
+        .stDataFrame, .stTable {{
+            border-radius: 10px !important;
+            border: 1px solid var(--border) !important;
+        }}
+
+        .stSelectbox > div > div, .stTextInput > div > div > input, .stNumberInput > div > div > input {{
+            background: var(--card) !important;
+            color: var(--fg) !important;
+            border-radius: 8px !important;
+            border: 1px solid var(--border) !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 # ============================================================
 # DATA LAYER
@@ -151,7 +226,7 @@ def load_data(ticker: str, interval: str, years: int = 1) -> pd.DataFrame:
     return df
 
 # ============================================================
-# INDICATOR ENGINE
+# INDICATORS
 # ============================================================
 
 @st.cache_data(show_spinner=False)
@@ -267,7 +342,7 @@ def compute_avwaps(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 # ============================================================
-# SWING & DIVERGENCE
+# DIVERGENCE & SWINGS
 # ============================================================
 
 def swing_lows(series: pd.Series, bars=5):
@@ -438,10 +513,10 @@ def scan_stock(ticker, interval, use_trend, fresh_only, bars, min_q):
         return None
 
 # ============================================================
-# BACKTEST ENGINE
+# BACKTEST ENGINE (B1 - SOLID)
 # ============================================================
 
-def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0):
+def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0, max_bars=20):
     df = df.reset_index(drop=True)
     if use_trend and trend_s is not None:
         try:
@@ -450,6 +525,16 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0):
             ts = pd.Series(True, index=range(len(df)))
     else:
         ts = pd.Series(True, index=range(len(df)))
+
+    slippage = 0.0005   # 0.05%
+    brokerage = 0.0003  # 0.03%
+    spread = 0.0002     # 0.02%
+
+    def apply_entry_costs(price):
+        return price * (1 + slippage + brokerage + spread)
+
+    def apply_exit_costs(price):
+        return price * (1 - slippage - brokerage - spread)
 
     trades = []
     eq = [100.0]
@@ -460,7 +545,10 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0):
         ei = i2 + 1
         if ei >= len(df) - 1:
             continue
-        ep = float(df["Open"].iloc[ei])
+
+        raw_open = float(df["Open"].iloc[ei])
+        ep = apply_entry_costs(raw_open)
+
         atr = float(df["ATR"].iloc[i2])
         e200 = float(df["EMA200"].iloc[i2])
         avwap = float(df["AVWAP"].iloc[i2])
@@ -482,49 +570,57 @@ def run_backtest(df, bull_divs, risk, trend_s, use_trend, trail=2.0):
         xr = "TIME"
         rem = qty
 
-        for j in range(ei + 1, min(ei + 20, len(df))):
+        for j in range(ei + 1, min(ei + max_bars, len(df))):
             hi = float(df["High"].iloc[j])
             lo = float(df["Low"].iloc[j])
             cl = float(df["Close"].iloc[j])
+
             csl = max(csl, cl - trail * float(df["ATR"].iloc[j]))
 
             if lo <= csl:
-                xp, xi, xr = csl, j, "SL"
+                xp = csl
+                xi = j
+                xr = "SL"
                 break
 
             if not pdone and hi >= tp1:
                 pdone = True
                 half = qty // 2
-                pnl1 = (tp1 - ep) * half
+                pnl1 = (apply_exit_costs(tp1) - ep) * half
                 trades.append({
                     "Entry_Date": str(df.index[ei])[:10],
                     "Exit_Date": str(df.index[j])[:10],
                     "Entry": round(ep, 2),
-                    "Exit": round(tp1, 2),
+                    "Exit": round(apply_exit_costs(tp1), 2),
                     "Qty": half,
                     "PnL": round(pnl1, 2),
                     "Reason": "TP1",
-                    "Ret_Pct": round((tp1 - ep) / ep * 100, 2),
+                    "Ret_Pct": round((apply_exit_costs(tp1) - ep) / ep * 100, 2),
                 })
                 eq.append(max(eq[-1] * (1 + pnl1 / (risk * 20)), 0.01))
                 rem = qty - half
+                csl = ep  # move SL to breakeven
 
             if hi >= tp2:
-                xp, xi, xr = tp2, j, "TP2"
+                xp = tp2
+                xi = j
+                xr = "TP2"
                 break
 
         if xp is None:
-            li = min(ei + 19, len(df) - 1)
+            li = min(ei + max_bars - 1, len(df) - 1)
             xp = float(df["Close"].iloc[li])
             xi = li
+            xr = "TIME EXIT"
 
-        pnl = (xp - ep) * rem
-        ret = (xp - ep) / ep * 100
+        xp_net = apply_exit_costs(xp)
+        pnl = (xp_net - ep) * rem
+        ret = (xp_net - ep) / ep * 100
         trades.append({
             "Entry_Date": str(df.index[ei])[:10],
             "Exit_Date": str(df.index[xi])[:10],
             "Entry": round(ep, 2),
-            "Exit": round(xp, 2),
+            "Exit": round(xp_net, 2),
             "Qty": rem,
             "PnL": round(pnl, 2),
             "Reason": xr,
@@ -607,7 +703,7 @@ def paper_place_order(ticker, direction, qty, price, sl, tpl):
         f"[{ts}] PAPER {direction} {qty}x {ticker} @ {price:.2f} | SL:{sl:.2f} TP:{tpl:.2f}"
     )
 
-def paper_check_exits(df_live, risk_per_trade):
+def paper_check_exits():
     to_close = []
     for tk, pos in st.session_state["at_pos"].items():
         if pos["status"] != "OPEN":
@@ -637,9 +733,6 @@ def paper_check_exits(df_live, risk_per_trade):
             continue
     for tk in to_close:
         st.session_state["at_pos"][tk]["status"] = "CLOSED"
-
-def shoonya_place_order(ticker, direction, qty, price):
-    return {"status": "ok", "msg": "Shoonya stub connect api_helper.py"}
 
 # ============================================================
 # VOLUME PROFILE & LIQUIDITY
@@ -755,6 +848,8 @@ def plot_chart(
     show_pools=True,
 ):
     df = compute_avwaps(df)
+    plot_theme = st.session_state.get("plot_theme", "plotly_dark")
+    gold = st.session_state.get("gold", "#f7e7ce")
 
     fig = make_subplots(
         rows=4,
@@ -785,7 +880,7 @@ def plot_chart(
     for sp, col, nm in [
         (21, "#e3b341", "EMA21"),
         (50, "#58a6ff", "EMA50"),
-        (200, "#ff9a3c", "EMA200"),
+        (200, gold, "EMA200"),
     ]:
         colname = f"EMA{sp}"
         if colname in df.columns:
@@ -795,7 +890,7 @@ def plot_chart(
                     y=df[colname],
                     line=dict(color=col, width=1.5),
                     name=nm,
-                    opacity=0.85,
+                    opacity=0.9,
                 ),
                 row=1,
                 col=1,
@@ -806,7 +901,7 @@ def plot_chart(
             go.Scatter(
                 x=df.index,
                 y=df["AVWAP"],
-                line=dict(color="#a371f7", width=2, dash="dash"),
+                line=dict(color=gold, width=2, dash="dash"),
                 name="AVWAP",
             ),
             row=1,
@@ -911,7 +1006,7 @@ def plot_chart(
             )
             fig.add_hline(
                 y=poc,
-                line_color="#ff4d4d",
+                line_color=gold,
                 line_width=2,
                 annotation_text="POC",
                 row=1,
@@ -919,7 +1014,7 @@ def plot_chart(
             )
             fig.add_hline(
                 y=vah,
-                line_color="#ffaa00",
+                line_color=gold,
                 line_width=1.5,
                 annotation_text="VAH",
                 row=1,
@@ -927,7 +1022,7 @@ def plot_chart(
             )
             fig.add_hline(
                 y=val,
-                line_color="#ffaa00",
+                line_color=gold,
                 line_width=1.5,
                 annotation_text="VAL",
                 row=1,
@@ -1036,9 +1131,9 @@ def plot_chart(
 
     fig.update_layout(
         height=900,
-        template="plotly_dark",
-        paper_bgcolor="#07090f",
-        plot_bgcolor="#0d1117",
+        template=plot_theme,
+        paper_bgcolor="#050608",
+        plot_bgcolor="#050608",
         xaxis_rangeslider_visible=False,
         margin=dict(l=8, r=8, t=36, b=8),
     )
@@ -1048,6 +1143,7 @@ def plot_equity(eq_list):
     ea = np.array(eq_list)
     pk = np.maximum.accumulate(ea)
     dd = (pk - ea) / pk * 100
+    plot_theme = st.session_state.get("plot_theme", "plotly_dark")
 
     fig = make_subplots(
         rows=2,
@@ -1082,150 +1178,282 @@ def plot_equity(eq_list):
 
     fig.update_layout(
         height=380,
-        template="plotly_dark",
-        paper_bgcolor="#07090f",
-        plot_bgcolor="#0d1117",
+        template=plot_theme,
+        paper_bgcolor="#050608",
+        plot_bgcolor="#050608",
         margin=dict(l=8, r=8, t=36, b=8),
     )
     return fig
+
+# ============================================================
+# PAGES
+# ============================================================
+
+def show_dashboard():
+    st.markdown(
+        """
+        <div class="royal-card">
+            <div class="royal-title">SNIPER TERMINAL v2</div>
+            <div class="royal-subtitle">ROYAL INSTITUTIONAL EDITION · DIVERGENCE · AVWAP · VOLUME PROFILE · LIQUIDITY</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("NIFTY (Mock)", "↑ 0.82%")
+    c2.metric("BANKNIFTY (Mock)", "↑ 1.12%")
+    c3.metric("INDIA VIX (Mock)", "↓ 3.5%")
+
+    st.markdown('<div class="royal-card">', unsafe_allow_html=True)
+    st.markdown("### Watchlist (Sample)")
+    st.dataframe(
+        pd.DataFrame(
+            {
+                "Ticker": ["HAL.NS", "TCS.NS", "RELIANCE.NS"],
+                "Bias": ["Bullish", "Neutral", "Bullish"],
+                "Notes": ["Recent divergence", "Range", "Above AVWAP"],
+            }
+        ),
+        use_container_width=True,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def show_screener():
+    st.markdown('<div class="royal-card">', unsafe_allow_html=True)
+    st.markdown("### Divergence Screener")
+    c1, c2, c3, c4 = st.columns(4)
+    universe = c1.selectbox("Universe", ["NIFTY50", "NIFTY200", "Custom"], index=1)
+    interval = c2.selectbox("Timeframe", ["1d", "1h", "15m", "1wk"])
+    swing_bars = c3.slider("Swing Bars", 3, 10, 5)
+    min_q = c4.slider("Min Quality", 0, 100, 50)
+
+    c5, c6, c7 = st.columns(3)
+    use_trend = c5.toggle("Weekly Trend Filter", value=True)
+    fresh_only = c6.toggle("Fresh Signals Only", value=True)
+    sq_only = c7.toggle("Squeeze Signals Only", value=False)
+
+    if universe == "NIFTY50":
+        tickers = NIFTY50
+    elif universe == "NIFTY200":
+        tickers = NIFTY200
+    else:
+        tickers = [
+            x.strip()
+            for x in st.text_input("Custom Tickers (comma separated)", "HAL.NS").split(",")
+            if x.strip()
+        ]
+
+    run = st.button("Run Screener")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    if run:
+        results = []
+        prog = st.progress(0, text="Scanning universe...")
+        total = len(tickers)
+        for idx, t in enumerate(tickers):
+            r = scan_stock(t, interval, use_trend, fresh_only, swing_bars, min_q)
+            if r:
+                if sq_only and not r["Squeeze_Fire"] and not r["In_Squeeze"]:
+                    pass
+                else:
+                    results.append(r)
+            prog.progress((idx + 1) / total, text=f"Scanning {t}")
+        prog.empty()
+        if results:
+            st.session_state["sr"] = pd.DataFrame(results).sort_values(
+                "Quality", ascending=False
+            )
+            st.success(f"Found {len(results)} setups")
+
+    if "sr" in st.session_state:
+        st.markdown('<div class="royal-card">', unsafe_allow_html=True)
+        st.markdown("### Screener Results")
+        st.dataframe(st.session_state["sr"], use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+def show_chart():
+    st.markdown('<div class="royal-card">', unsafe_allow_html=True)
+    st.markdown("### Chart & Analysis")
+    c1, c2, c3 = st.columns(3)
+    ticker = c1.text_input("Ticker", "HAL.NS")
+    interval = c2.selectbox("Timeframe", ["1d", "1h", "15m", "1wk"])
+    swing_bars = c3.slider("Swing Bars", 3, 10, 5)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.sidebar.markdown(
+        """
+        <div class="royal-sidebar-header">
+            <div class="royal-title" style="font-size:16px;">CHART LAYERS</div>
+            <div class="royal-subtitle">AVWAP · VOLUME PROFILE · LIQUIDITY</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.sidebar.expander("AVWAP Layers", True):
+        show_top = st.checkbox("Major Top AVWAP", True)
+        show_bottom = st.checkbox("Major Bottom AVWAP", True)
+        show_rtop = st.checkbox("Recent Top AVWAP", False)
+        show_rbot = st.checkbox("Recent Bottom AVWAP", False)
+
+    with st.sidebar.expander("Volume Profile", True):
+        show_vp = st.checkbox("Fixed Range VP", True)
+        show_vp_session = st.checkbox("Session Volume Profile", False)
+        show_hvn_lvn = st.checkbox("HVN / LVN Nodes", False)
+
+    with st.sidebar.expander("Liquidity Zones", True):
+        show_liq = st.checkbox("Liquidity Zones", True)
+        show_eqh_eql = st.checkbox("EQH / EQL", True)
+        show_pools = st.checkbox("Liquidity Pools", True)
+
+    if st.button("Load Chart"):
+        df_raw = load_data(ticker, interval)
+        if df_raw.empty:
+            st.warning("No data for this ticker/timeframe.")
+            return
+        df_f = compute_indicators(df_raw)
+        bd, brd = compute_divergences(df_f, bars=swing_bars)
+        st.plotly_chart(
+            plot_chart(
+                df_f,
+                bd,
+                brd,
+                ticker,
+                show_top,
+                show_bottom,
+                show_rtop,
+                show_rbot,
+                show_vp,
+                show_vp_session,
+                show_hvn_lvn,
+                show_liq,
+                show_eqh_eql,
+                show_pools,
+            ),
+            use_container_width=True,
+        )
+
+def show_backtest():
+    st.markdown('<div class="royal-card">', unsafe_allow_html=True)
+    st.markdown("### Backtest Engine (Solid)")
+    with st.form("backtest_form"):
+        c1, c2, c3, c4 = st.columns(4)
+        bt_tick = c1.text_input("Ticker", "HAL.NS")
+        bt_tf = c2.selectbox("Timeframe", ["1d", "1h", "15m", "1wk"])
+        bt_risk = c3.number_input("Risk per trade (INR)", 1000, 100000, 2000, 500)
+        bt_years = c4.slider("Years", 1, 5, 2)
+        run_bt = st.form_submit_button("Run Backtest")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    if run_bt:
+        df_bt_raw = load_data(bt_tick, bt_tf, years=bt_years)
+        if df_bt_raw.empty:
+            st.warning("No data for this ticker/timeframe.")
+            return
+        df_bt = compute_indicators(df_bt_raw)
+        bd, brd = compute_divergences(df_bt, bars=5)
+        dft, stats = run_backtest(df_bt, bd, bt_risk, None, False)
+        if dft.empty:
+            st.info("No trades generated with current logic.")
+            return
+
+        st.markdown('<div class="royal-card">', unsafe_allow_html=True)
+        st.markdown("### Performance Summary")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Win Rate", f"{stats['Win_Rate']}%")
+        c2.metric("Profit Factor", stats["Profit_Factor"])
+        c3.metric("Max Drawdown", f"{stats['Max_DD']}%")
+        c4.metric("Total Return", f"{stats['Total_Return']}%")
+        c5, c6, c7, c8 = st.columns(4)
+        c5.metric("Sharpe", stats["Sharpe"])
+        c6.metric("Sortino", stats["Sortino"])
+        c7.metric("Calmar", stats["Calmar"])
+        c8.metric("Kelly %", stats["Kelly"])
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown('<div class="royal-card">', unsafe_allow_html=True)
+        st.plotly_chart(plot_equity(stats["Equity"]), use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown('<div class="royal-card">', unsafe_allow_html=True)
+        st.markdown("### Trade Log")
+        st.dataframe(dft, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+def show_autotrade():
+    get_autotrade_state()
+    st.markdown('<div class="royal-card">', unsafe_allow_html=True)
+    st.markdown("### Auto Trade (Paper Mode Stub)")
+    mode = st.radio("Mode", ["Paper"], horizontal=True)
+    st.session_state["at_mode"] = mode.lower()
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Toggle Engine"):
+            st.session_state["at_active"] = not st.session_state["at_active"]
+    with col2:
+        st.metric("Total PnL (Paper)", f"INR {st.session_state['at_pnl']:.0f}")
+    st.write("Open Positions")
+    if st.session_state["at_pos"]:
+        st.dataframe(pd.DataFrame(st.session_state["at_pos"]).T)
+    else:
+        st.write("No open positions.")
+    st.write("Event Log")
+    if st.session_state["at_log"]:
+        for line in st.session_state["at_log"][-20:]:
+            st.write(line)
+    else:
+        st.write("No events yet.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def show_settings():
+    st.markdown('<div class="royal-card">', unsafe_allow_html=True)
+    st.markdown("### Settings")
+    theme = st.radio("Theme", ["Dark", "Light"], index=0 if st.session_state["theme"] == "Dark" else 1)
+    st.session_state["theme"] = theme
+    st.markdown("You can also extend this page with API keys, risk defaults, and layout presets.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # ============================================================
 # MAIN
 # ============================================================
 
 def main():
+    apply_theme()
     get_autotrade_state()
 
-    st.markdown("""
-    <div style="background: linear-gradient(135deg, #0d1117,#161b22); border-radius:12px; padding:18px 26px; margin-bottom:20px; display: flex; align-items:center; gap: 16px; border:1px solid #21262d;">
-      <div style="width: 44px; height: 44px; background: linear-gradient(135deg, #2ea043,#1a7f37); border-radius: 12px; display: flex; align-items:center; justify-content:center; font-size:22px; font-weight:900; color:#fff; box-shadow:0 0 16px rgba(35,134,54,.4)">S</div>
-      <div>
-        <div style="font-size:22px; font-weight:800; color:#f0f6fc; letter-spacing:-0.5px;">SNIPER TERMINAL v2</div>
-        <div style="font-size:10px; color:#8b949e; letter-spacing:2px; margin-top:2px">
-          RSI+MACD DUAL DIVERGENCE · BB SQUEEZE · ORDER FLOW · VWAP BANDS · AUTO TRADE
-        </div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+    with st.sidebar:
+        st.markdown(
+            """
+            <div class="royal-sidebar-header">
+                <div style="font-size:18px; font-weight:800; color:var(--gold); letter-spacing:0.18em; text-transform:uppercase;">
+                    ◆ Sniper Terminal v2 ◆
+                </div>
+                <div class="royal-subtitle">Royal Institutional Edition</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    tab_s, tab_b, tab_at, tab_g = st.tabs(["Screener", "Backtest", "Auto Trade", "Guide"])
+        menu = st.radio(
+            "Navigation",
+            ["Dashboard", "Screener", "Chart", "Backtest", "Auto Trade", "Settings"],
+            index=0,
+        )
 
-    with tab_s:
-        c1, c2, c3, c4 = st.columns(4)
-        universe = c1.selectbox("Universe", ["NIFTY50", "NIFTY200", "Custom"], index=1)
-        interval = c2.selectbox("Timeframe", ["1d", "1h", "15m", "1wk"])
-        swing_bars = c3.slider("Swing Bars", 3, 10, 5)
-        min_q = c4.slider("Min Quality", 0, 100, 50)
-
-        c5, c6, c7 = st.columns(3)
-        use_trend = c5.toggle("Weekly Trend Filter", value=True)
-        fresh_only = c6.toggle("Fresh Signals Only", value=True)
-        sq_only = c7.toggle("Squeeze Signals Only", value=False)
-
-        if universe == "NIFTY50":
-            tickers = NIFTY50
-        elif universe == "NIFTY200":
-            tickers = NIFTY200
-        else:
-            tickers = [x.strip() for x in st.text_input("Tickers", "HAL.NS").split(",") if x.strip()]
-
-        if st.button("Run Screener"):
-            results = []
-            prog = st.progress(0, text="Scanning...")
-            total = len(tickers)
-            for idx, t in enumerate(tickers):
-                r = scan_stock(t, interval, use_trend, fresh_only, swing_bars, min_q)
-                if r:
-                    if sq_only and not r["Squeeze_Fire"] and not r["In_Squeeze"]:
-                        pass
-                    else:
-                        results.append(r)
-                prog.progress((idx + 1) / total, text=f"Scanning {t}")
-            prog.empty()
-            if results:
-                st.session_state["sr"] = pd.DataFrame(results).sort_values("Quality", ascending=False)
-                st.success(f"Found {len(results)} setups")
-
-        if "sr" in st.session_state:
-            st.dataframe(st.session_state["sr"], use_container_width=True)
-            sel = st.selectbox("Select ticker for chart", st.session_state["sr"]["Ticker"].tolist())
-            if sel:
-                df_raw = load_data(sel, interval)
-                if not df_raw.empty:
-                    df_f = compute_indicators(df_raw)
-
-                    st.markdown("### Chart Layers")
-                    c1, c2, c3, c4 = st.columns(4)
-                    show_top = c1.toggle("Major Top AVWAP", value=True)
-                    show_bottom = c2.toggle("Major Bottom AVWAP", value=True)
-                    show_rtop = c3.toggle("Recent Top AVWAP", value=False)
-                    show_rbot = c4.toggle("Recent Bottom AVWAP", value=False)
-
-                    c5, c6, c7 = st.columns(3)
-                    show_vp = c5.toggle("Volume Profile", value=True)
-                    show_vp_session = c6.toggle("Session Volume Profile", value=False)
-                    show_hvn_lvn = c7.toggle("HVN / LVN Nodes", value=False)
-
-                    c8, c9, c10 = st.columns(3)
-                    show_liq = c8.toggle("Liquidity Zones", value=True)
-                    show_eqh_eql = c9.toggle("EQH / EQL", value=True)
-                    show_pools = c10.toggle("Liquidity Pools", value=True)
-
-                    bd, brd = compute_divergences(df_f, bars=swing_bars)
-                    st.plotly_chart(
-                        plot_chart(
-                            df_f,
-                            bd,
-                            brd,
-                            sel,
-                            show_top,
-                            show_bottom,
-                            show_rtop,
-                            show_rbot,
-                            show_vp,
-                            show_vp_session,
-                            show_hvn_lvn,
-                            show_liq,
-                            show_eqh_eql,
-                            show_pools,
-                        ),
-                        use_container_width=True,
-                    )
-                else:
-                    st.warning("No data for this ticker/timeframe.")
-
-    with tab_b:
-        with st.form("backtest_form"):
-            c1, c2, c3, c4 = st.columns(4)
-            bt_tick = c1.text_input("Ticker", "HAL.NS")
-            bt_tf = c2.selectbox("Timeframe", ["1d", "1h", "15m", "1wk"])
-            bt_risk = c3.number_input("Risk per trade (INR)", 1000, 100000, 2000, 500)
-            bt_years = c4.slider("Years", 1, 5, 2)
-
-            run_bt = st.form_submit_button("Run Backtest")
-            if run_bt:
-                df_bt_raw = load_data(bt_tick, bt_tf, years=bt_years)
-                if df_bt_raw.empty:
-                    st.warning("No data for this ticker/timeframe.")
-                else:
-                    df_bt = compute_indicators(df_bt_raw)
-                    bd, brd = compute_divergences(df_bt, bars=5)
-                    dft, stats = run_backtest(df_bt, bd, bt_risk, None, False)
-                    if dft.empty:
-                        st.info("No trades generated with current logic.")
-                    else:
-                        st.write(stats)
-                        st.plotly_chart(
-                            plot_equity(stats["Equity"]),
-                            use_container_width=True,
-                        )
-                        st.dataframe(dft, use_container_width=True)
-
-    with tab_at:
-        st.info("Auto Trade Engine - Testing phase (Shoonya integration stubbed).")
-
-    with tab_g:
-        st.markdown("## Guide\n\nSniper Terminal v2 logic:\n\n- Dual divergence (RSI + MACD Hist)\n- Weekly trend filter\n- AVWAP from major & recent swings\n- Volume Profile (POC, VAL, VAH, HVN/LVN)\n- Liquidity zones (EQH/EQL, wick pools)\n- ATR-based risk and backtest engine.")
+    if menu == "Dashboard":
+        show_dashboard()
+    elif menu == "Screener":
+        show_screener()
+    elif menu == "Chart":
+        show_chart()
+    elif menu == "Backtest":
+        show_backtest()
+    elif menu == "Auto Trade":
+        show_autotrade()
+    elif menu == "Settings":
+        show_settings()
 
 if __name__ == "__main__":
     main()
